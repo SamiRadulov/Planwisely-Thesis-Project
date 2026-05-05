@@ -1,0 +1,5 @@
+Baseline models: linear regression, ridge/lasso regression
+Tree-based models: Random forest, gradient boosting (XGBoost, LightGBM, CatBoost)
+Time series models: SARIMA, ARIMA, prophet
+Advanced ML models: Neural network
+Explainability Methods: SHAP, partial dependence plot
