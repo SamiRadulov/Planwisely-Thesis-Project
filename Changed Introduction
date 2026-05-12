@@ -1,0 +1,56 @@
+In recent years, accurate sales forecasting has been a fundamental requirement for effec-
+tive supply chain management. Organisations rely on demand predictions to determine
+the amount of inventory to hold, when to reorder, and how much buffer stock to keep
+against uncertainty. An inaccurate estimate has a negative impact on any organisation’s
+supply chain and subsequently affects its profitability. The COVID-19 pandemic showed
+how quickly widespread supply chain disruptions can lead to major stockouts, resulting
+in substantial loss of revenues and, in some cases, even company bankruptcies (Aratani,
+2024; Fried, 2020).
+
+However, such inventory failures are not limited to crisis events. Even under stable con-
+ditions, misaligned inventory levels consistently reduce efficiency and profitability. When
+stock is held in excess, organisations incur carrying costs that typically represent between
+20 and 30 percent of the total inventory value (McCue, 2022). Similarly, underestima-
+tion of demand leads to stockouts, lost sales, and customer dissatisfaction (Amosu et al.,
+2024). It is therefore crucial for organisations to manage their inventories by taking cus-
+tomer demand into account, a process that depends on the accuracy of sales forecasting.
+
+Despite its importance, traditional forecasting methods, such as time series models and
+regression-based approaches, often struggle to capture the complex, non-linear patterns
+present in real-world sales data, leading to persistent inaccuracies (Tulli, 2020). While
+advanced machine learning methods often achieve higher predictive performance than tra-
+ditional forecasting approaches, many smaller organisations that do not have a dedicated
+data science team cannot access and deploy such tools. Their implementation demands
+significant computational resources, model training expertise, and ongoing maintenance
+(Kumar et al., 2023).
+
+This project addresses this gap through a Design Science Research approach, by pro-
+ducing a functional artefact in a real-world forecasting context (Hevner et al., 2004). The
+artefact is an interactive web-based dashboard that allows the user to upload historical
+sales data, select one of four predictive models, and receive a visual weekly sales forecast
+alongside reasoning about the predicted numbers. It is designed to simplify the user ex-
+perience by hiding the complex models behind a simple interface, allowing users without
+prior data science knowledge to benefit from accurate sales forecasting.
+
+From an academic perspective, this project also has relevance. By following the De-
+sign Science Research methodology, it contributes to a growing body of research that
+evaluates artefacts in real-world settings rather than producing purely theoretical out-
+put (Hevner et al., 2004). This project contributes to the growing field of Explainable
+Artificial Intelligence (XAI) within demand forecasting. Existing forecasting research pri-
+marily focuses on improving predictive accuracy, while limited attention is given to the
+interpretability and explanation of model outputs for end users (Theissler et al., 2022).
+By integrating forecasting models with explanation techniques such as SHAP and Par-
+tial Dependence Plots, this research aims to improve both transparency and usability of
+machine learning-based forecasting systems.
+
+The main research question guiding this project is: How can explainable AI methods
+provide meaningful interpretation for demand forecasting models?
+
+This thesis is produced as part of a collaborative group research project. Each group
+member contributed to the problem definition, supplemental data collection and pre-
+processing, dashboard design, and its implementation. Additionally, each member is
+individually responsible for developing a separate forecasting model under identical data
+conditions, with all four models integrated in the dashboard. The present thesis focuses
+specifically on [model name — to be specified]. The dataset used in this project consists
+of historical sales records from a candy company. After preprocessing and filtering, a
+subset of products with sufficient sales history was retained for model development.
