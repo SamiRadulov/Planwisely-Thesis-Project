@@ -1,0 +1,20 @@
+3	Business Understanding
+3.1	Domain Context and Business Value
+Planwisely B.V. is a planning and scheduling platform provider that develops solutions for manufacturing companies. It enables their customers with the AI tools to determine the order and machine assignment of production orders. The company also offers a demand planing tool to manage demand forecasts and production scheduling. The client in this project is a confectionery manufacturer.
+Demand forecasting takes a central role in supply chain management. It helps companies to match supply with the expected demand and avoid the costs of overstocking and stockouts. In the food industry, and in confectionery in particular, this problem is especially relevant. Products have defined shelf lives, demand is sensitive to both internal and external factors, and distribution channel is usually very spanned and diverse (Nassibi et al., 2023).
+The business value of improved forecasting model is direct. Overestimation leads to excess stock and potential waste. Underestimation leads to stockouts, lost revenue, and weakened retailer and customer relationships. Apart from accuracy, the explainability of predictions leads to validated reasoning, possible long-term adjustments and better communication within the planning teams and executives. This is the gap the artifact in this project is designed to fill.
+3.2	Existing Solutions
+An analysis of the existing demand forecasting tools reveals two major categories.
+Traditional statistical tools such as Excel-based forecasting and ERP modules or classical time series methods. These approaches are commonly used due to their simplicity and minimal required expertise to operate. However, they are limited in the ability to capture complex patterns.
+The second category is advanced ML and AI forecasting solutions. They offer high accuracy but provide limited or no explanation and require significant technical expertise to create and maintain.
+The gap this project is aiming is the combination of these methods. A system that achieves high accuracy of complex models while providing the interpretability of simpler tools. This should be packaged in an accessible interface that is native for non-technical users. No existing open-source tool occupies this space for this specific domain.
+3.3	Requirements and Design Principles
+Based on the business context, analysis of the existing solutions described above and discussions with Planwisely B.V., the following design principles were determined. First, usability: the dashboard must be suitable for users without data science experience. Second, transparency: every forecast must be provided with an explanation. Third, flexibility: the users should be able to choose between the different types of models depending on their requirements or preferences.
+To prioritize the requirements, the MoSCoW method was used.
+Must Have	Should Have	Could Have	Will Not Have
+Upload	CSV
+data	Multiple	model options	Advanced	cus-
+tomisation	Mobile app
+Basic	forecast
+visualization	Explanations for predictions		
+These requirements should provide a sufficient artifact for explainable demand forecasting.
