@@ -18,3 +18,158 @@ tomisation	Mobile app
 Basic	forecast
 visualization	Explanations for predictions		
 These requirements should provide a sufficient artifact for explainable demand forecasting.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\section{Business Understanding}
+
+\subsection{Domain Context and Business Value}
+Planwisely B.V. is a planning and scheduling platform provider that develops 
+solutions for manufacturing companies. It enables their customers with AI tools to 
+determine the order and machine assignment of production orders. The company also 
+offers a demand planning tool to manage demand forecasts and production scheduling. 
+The client in this project is a confectionery manufacturer.
+
+Demand forecasting takes a central role in supply chain management. It helps 
+companies to match supply with expected demand and avoid the costs of overstocking 
+and stockouts \citep{lewis2012demand}. In the food industry, and in confectionery in 
+particular, this problem is especially relevant. Products have defined shelf lives, 
+demand is sensitive to both internal and external factors, and distribution channels 
+are usually very diverse \citep{nassibi2023demand}.
+
+The business value of an improved forecasting model is direct. Overestimation leads 
+to excess stock and potential waste, while underestimation leads to stockouts, lost 
+revenue, and weakened retailer and customer relationships \citep{amosu2024}. Apart 
+from accuracy, the explainability of predictions enables validated reasoning, 
+long-term adjustments, and better communication within planning teams 
+\citep{theissler2022}. This is the gap the artefact in this project is designed 
+to fill.
+
+\subsection{Existing Solutions}
+An analysis of existing demand forecasting tools reveals two major categories.
+
+The first category consists of traditional statistical tools, such as Excel-based 
+forecasting, ERP modules, and classical time series methods. These approaches are 
+commonly used due to their simplicity and low barrier to entry. However, they are 
+limited in their ability to capture complex, non-linear demand patterns 
+\citep{armstrong2005demand}.
+
+The second category consists of advanced machine learning and AI forecasting 
+solutions. While such methods offer high predictive 
+accuracy, they provide limited transparency into how forecasts are generated and 
+require significant technical expertise to implement and maintain 
+\citep{carbonneau2008application}.
+
+The gap this project addresses is the combination of these two categories: a system 
+that achieves the accuracy of complex models while providing the interpretability of 
+simpler tools, packaged in an accessible interface designed for non-technical users.
+
+\subsection{GAPS Analysis}
+
+Figure~\ref{fig:gaps} presents the GAPS diagram, mapping the current situation to 
+the desired situation via the identified gap.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    box/.style={rectangle, draw, rounded corners, text width=3.5cm, 
+                align=center, minimum height=2cm, fill=gray!10},
+    arrow/.style={->, thick}
+]
+% Current situation
+\node[box] (current) at (0,0) 
+    {\textbf{Current Situation}\\[4pt] 
+    Traditional tools:\\ interpretable but\\ inaccurate\\[4pt]
+    ML tools:\\ accurate but\\ unexplainable};
+
+% Gap
+\node[box, fill=red!10] (gap) at (5,0) 
+    {\textbf{Gap}\\[4pt] 
+    No accessible tool\\ combines accuracy\\ and explainability\\ 
+    for non-technical\\ users};
+
+% Desired situation
+\node[box, fill=green!10] (desired) at (10,0) 
+    {\textbf{Desired Situation}\\[4pt] 
+    Interactive dashboard:\\ accurate forecasts\\ with XAI 
+    explanations\\ for non-technical\\ users};
+
+\draw[arrow] (current) -- (gap);
+\draw[arrow] (gap) -- (desired);
+\end{tikzpicture}
+\caption{GAPS diagram: from current situation to desired artefact.}
+\label{fig:gaps}
+\end{figure}
+
+\subsection{Process Diagram}
+
+Figure~\ref{fig:process} illustrates the high-level process of the forecasting 
+dashboard, from data input to explainable output.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    mybox/.style={rectangle, draw, rounded corners, text width=2.8cm, 
+                 align=center, minimum height=1.2cm, fill=gray!10},
+    arrow/.style={->, thick}
+]
+\node[mybox] (input)   at (0,0)   
+    {\textbf{1. Data Input} \\ Upload CSV file};
+\node[mybox] (preproc) at (3.5,0) 
+    {\textbf{2. Preprocessing} \\ Clean and transform data};
+\node[mybox] (model)   at (7,0)   
+    {\textbf{3. Modelling} \\ Select and run forecast model};
+\node[mybox] (explain) at (10.5,0)
+    {\textbf{4. Explanation} \\ Generate SHAP values};
+\node[mybox] (output)  at (5.25,-2.5)
+    {\textbf{5. Output} \\ Visualise forecast and explanations};
+\draw[arrow] (input)   -- (preproc);
+\draw[arrow] (preproc) -- (model);
+\draw[arrow] (model)   -- (explain);
+\draw[arrow] (explain) -- (output);
+\draw[arrow] (model)   -- (output);
+\end{tikzpicture}
+\caption{Process diagram of the explainable demand forecasting dashboard.}
+\label{fig:process}
+\end{figure}
+
+\subsection{Requirements and Design Principles}
+Based on the business context, analysis of existing solutions described above, and 
+discussions with Planwisely B.V., the following design principles were determined. 
+First, usability: the dashboard must be suitable for users without data science 
+experience. Second, transparency: every forecast must be accompanied by an 
+explanation. Third, flexibility: users should be able to choose between different 
+types of models depending on their requirements or preferences.
+
+To prioritise the requirements, the MoSCoW method was applied \citep{clegg1994case}.
+
+\begin{table}[H]
+\centering
+\caption{MoSCoW prioritisation of artefact features.}
+\label{tab:moscow}
+\begin{tabular}{p{3.2cm} p{3.2cm} p{3.2cm} p{3.2cm}}
+\toprule
+Must Have & Should Have & Could Have & Won't Have \\
+\midrule
+Upload CSV data        & Multiple model options      & Advanced customisation  
+& Mobile app \\[4pt]
+Basic forecast visualisation & Explanations for predictions & Export forecast 
+results & Real-time data streaming \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Together, these requirements define the scope of the artefact and guide the design 
+and modelling choices described in the following chapters. The next chapter details 
+the data used to develop and evaluate the forecasting models.
