@@ -383,7 +383,7 @@ def arrow(pc):
 # ══════════════════════════════════════════════════════════════════════════════
 # UPLOAD ROW — equal-width model + sales dropdowns, file box shrunk to match
 # ══════════════════════════════════════════════════════════════════════════════
-uL, uM, uR, uRR = st.columns([3.5, 1.5, 1.5, 1], gap="medium")
+uL, uM, uR, uRR = st.columns([1.5, 1.5, 1.5, 1], gap="medium")
 with uL:
     uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
 with uM:
