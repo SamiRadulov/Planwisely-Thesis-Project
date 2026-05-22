@@ -1,21 +1,3 @@
-The main dataset used in this project was provided by Planwisely B.V. and consists of historical sales records from a Dutch company. The data is stored in CSV format and contains 42,625 daily sales entries, covering 1,027 individual product SKUs, spanning from December 2017 to December 2021. Each record includes three fields: product identifier, sales date, and daily sales volume. The B2B wholesale nature of the data is clearly reflected in the record structure, with almost no sales records on weekends, indicating that downstream buyers are institutional clients rather than individual consumers.
-
-To enrich the predictive features, this study additionally integrated three types of external data. The first type is KNMI climate data from the Royal Netherlands Meteorological Institute, including weekly average temperature, maximum and minimum temperatures, precipitation, and sunshine hours. The second type is Dutch public holidays, extracted using the Python holidays library, covering major holidays such as Easter, King's Day, and Christmas, and deriving features such as the number of days until the nearest holiday and the distance to Easter. The third type is Dutch school holiday data, collected separately according to the three educational regions of Noord, Midden, and Zuid, including autumn break, Christmas break, spring break, and summer break, to capture the impact of school holidays on consumer behavior.
-
-During data cleaning, 54 duplicate records were found, indicating that multiple entries for the same product existed on the same date. The solution was to group and sum the entries by product and date. The data was then aggregated to a weekly level, using `week_start` as the unified time key, and merged with external data.
-
-Exploratory analysis revealed several meaningful data characteristics. At the time-series level, weekly sales volume exhibits significant annual seasonality, with a regular peak in April each year, closely coinciding with Easter. The pattern of a systematic increase in sales in the two weeks leading up to Easter and a rapid decline afterward has been consistently observed in multiple years. An abnormal peak occurred in April 2020, determined to be due to stockpiling behavior at the beginning of the COVID-19 pandemic. However, this disturbance lacks cyclical regularity, and a COVID flag variable will be introduced during feature engineering to differentiate it. At the product level, sales distribution exhibits a highly right-skewed long-tail structure, with a median of 17 for the target variable and a maximum value exceeding 1,300, indicating significant differences in product size. For the original 1,027 products, many have very few historical records, showing intermittent demand characteristics. To ensure model quality, products with fewer than 52 weeks of historical records were excluded, ultimately retaining 114 products and approximately 12,667 observation records for modeling.
-
-After the above processing, the final dataset has no missing values ​​and the time series structure is complete. The seasonal patterns, holiday effects, COVID disturbances, and product sparsity revealed in the Data Understanding phase together form empirical basis for data preparation and feature engineering phases.
-
-
-
-
-
-
-
-
-
 \section{Data understanding}
 \subsection{Data Sources}
 The main dataset used in this project was provided by Planwisely B.V. and consists 
@@ -66,7 +48,7 @@ quality of the input data directly affects model performance
 \citep{zhao2006effective}. The preprocessing steps applied in this project are 
 summarised in Figure~\ref{fig:pipeline} and described below.
 \\
-\\During data cleaning, 54 duplicate records were identified, meaning multiple entries 
+\\During data cleaning, 108 duplicate records were identified, meaning multiple entries 
 existed for the same product on the same date. These were resolved by grouping and 
 summing entries by product and date. The data were then aggregated from daily to 
 weekly level, using \texttt{week\_start} as the unified time key, and merged with 
@@ -76,7 +58,7 @@ the external data sources.
 analysis. This step was necessary because sparse, intermittent demand series are 
 known to cause significant challenges for standard forecasting models 
 \citep{turkmen2021forecasting}. After filtering, 114 products and approximately 
-12,667 weekly observation records were retained for modelling.
+13,579 weekly observation records were retained for modelling.
 
 \begin{figure}[h!]
 \centering
@@ -110,5 +92,5 @@ increase in sales in the two weeks leading up to Easter, followed by a rapid
 decline, was consistently observed across multiple years. An abnormal peak occurred in April 2020, determined to be due to stockpiling behavior at the beginning of the COVID-19 pandemic. However, this disturbance lacks cyclical regularity, and a COVID flag variable will be introduced during feature engineering to differentiate it.
 \\
 \\At the product level, the sales distribution has a highly right-skewed, 
-long-tail structure, with a median weekly sales volume of 17 and a maximum value 
-exceeding 1,300. This indicates variation in product size across the dataset. The seasonal patterns, holiday effects, COVID disturbances, and product sparsity revealed in the Data Understanding phase together form empirical basis for data preparation and feature engineering phases.
+long-tail structure, with a median weekly sales volume of 9 and a maximum value 
+exceeding 2,871. This indicates variation in product size across the dataset. The seasonal patterns, holiday effects, COVID disturbances, and product sparsity revealed in the Data Understanding phase together form empirical basis for data preparation and feature engineering phases.
