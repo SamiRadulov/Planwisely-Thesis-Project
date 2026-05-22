@@ -11,6 +11,7 @@ from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import plotly.graph_objects as go
 warnings.filterwarnings("ignore")
 
 LOGO   = "https://planwisely.ai/wp-content/uploads/2024/08/Planwisely01_1765553.png"
@@ -79,61 +80,80 @@ st.markdown(f"""
   .stButton>button {{
       background:{BLUE}!important; color:#fff!important; border:none!important;
       border-radius:8px!important; padding:0.45rem 1.2rem!important;
-      font-weight:600!important; font-size:13px!important; width:100%;
+      font-weight:600!important; font-size:15px!important; width:100%;
+      height:52px!important;
   }}
   .stButton>button:hover   {{ background:#1D4ED8!important; }}
   .stButton>button:disabled {{ background:#4B6A9B!important; opacity:0.6!important; }}
 
-  /* FILE UPLOADER — compact uploaded file tile */
-.stFileUploader {
-    background: transparent !important;
-    padding: 0 !important;
-}
+  /* FILE UPLOADER */
+  .stFileUploader {{
+      background: transparent !important;
+      padding: 0 !important;
+  }}
 
-.stFileUploader section {
-    padding: 0 !important;
-    min-height: 52px !important;
-    height: 52px !important;
-    border-radius: 8px !important;
-    display: flex !important;
-    align-items: center !important;
-}
+  .stFileUploader section {{
+      padding: 0 !important;
+      min-height: 52px !important;
+      height: 52px !important;
+      border-radius: 8px !important;
+      display: flex !important;
+      align-items: center !important;
+  }}
 
-[data-testid="stFileUploaderDropzone"] {
-    padding: 0 10px !important;
-    min-height: 52px !important;
-    height: 52px !important;
-    display: flex !important;
-    align-items: center !important;
-}
+  [data-testid="stFileUploaderDropzone"] {{
+      padding: 0 10px !important;
+      min-height: 52px !important;
+      height: 52px !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      width: 100% !important;
+  }}
 
-/* uploaded file chip */
-[data-testid="stFileUploaderFile"] {
-    margin-top: 0 !important;
-    padding: 4px 8px !important;
-    min-height: 38px !important;
-    display: flex !important;
-    align-items: center !important;
-}
+  [data-testid="stFileUploaderDropzone"] svg {{
+      display: none !important;
+  }}
 
-/* remove extra top whitespace inside uploaded file */
-[data-testid="stFileUploaderFile"] > div {
-    padding-top: 0 !important;
-    margin-top: 0 !important;
-    align-items: center !important;
-}
+  [data-testid="stFileUploaderDropzone"] span,
+  [data-testid="stFileUploaderDropzone"] small {{
+      font-size: 13px !important;
+      line-height: 1.2 !important;
+  }}
 
-/* file icon alignment */
-[data-testid="stFileUploaderFile"] svg {
-    margin-top: 0 !important;
-    align-self: center !important;
-}
-  /* SELECTBOXES — 52px height */
+  [data-testid="stFileUploaderFile"] {{
+      margin-top: 0 !important;
+      padding: 4px 8px !important;
+      min-height: 38px !important;
+      height: 38px !important;
+      display: flex !important;
+      align-items: center !important;
+  }}
+
+  [data-testid="stFileUploaderFile"] > div {{
+      padding-top: 0 !important;
+      margin-top: 0 !important;
+      align-items: center !important;
+  }}
+
+  [data-testid="stFileUploaderFile"] svg {{
+      margin-top: 0 !important;
+      align-self: center !important;
+  }}
+
+  [data-testid="stFileUploaderFileName"] {{
+      padding-top: 0 !important;
+      margin-top: 0 !important;
+      line-height: 1.1 !important;
+  }}
+
+  /* SELECTBOXES */
   div[data-baseweb="select"] {{
       min-height: 52px !important;
   }}
   div[data-baseweb="select"] > div:first-child {{
       min-height: 52px !important;
+      height: 52px !important;
       align-items: center !important;
   }}
 
@@ -142,11 +162,11 @@ st.markdown(f"""
       padding:18px 22px; border:1px solid {BORDER}; height:100%;
   }}
   .tile-label {{
-      font-size:9px; font-weight:700; letter-spacing:.12em;
+      font-size:12px; font-weight:700; letter-spacing:.12em;
       text-transform:uppercase; color:#94A3B8; margin-bottom:2px;
   }}
   .tile-title {{
-      font-size:14px; font-weight:700; color:{NAVY}; margin-bottom:10px;
+      font-size:17px; font-weight:700; color:{NAVY}; margin-bottom:10px;
   }}
   .tile-divider {{ border:none; border-top:1px solid {BORDER}; margin:14px 0; }}
 
@@ -156,46 +176,45 @@ st.markdown(f"""
       border-right:1px solid {BORDER};
   }}
   .kpi-cell:last-child {{ border-right:none; padding-right:0; margin-right:0; }}
-  .kpi-num {{ font-size:30px; font-weight:800; color:{NAVY}; line-height:1; }}
-  .kpi-sub {{ font-size:10px; color:#64748B; margin-top:3px; }}
+  .kpi-num {{ font-size:33px; font-weight:800; color:{NAVY}; line-height:1; }}
+  .kpi-sub {{ font-size:13px; color:#64748B; margin-top:3px; }}
 
   .ptile {{
       background:{CARD}; border-radius:12px; border:1px solid {BORDER};
       padding:18px 14px; text-align:center; height:100%;
       display:flex; flex-direction:column; align-items:center; justify-content:center;
   }}
-  .ptile-period {{ font-size:9px; font-weight:700; letter-spacing:.12em;
+  .ptile-period {{ font-size:12px; font-weight:700; letter-spacing:.12em;
       text-transform:uppercase; color:#94A3B8; margin-bottom:4px; }}
-  .ptile-date   {{ font-size:11px; color:#64748B; margin-bottom:8px; }}
-  .ptile-num    {{ font-size:32px; font-weight:800; color:{NAVY}; line-height:1; }}
-  .ptile-sub    {{ font-size:10px; color:#64748B; margin-top:4px; margin-bottom:8px; }}
+  .ptile-date   {{ font-size:14px; color:#64748B; margin-bottom:8px; }}
+  .ptile-num    {{ font-size:35px; font-weight:800; color:{NAVY}; line-height:1; }}
+  .ptile-sub    {{ font-size:13px; color:#64748B; margin-top:4px; margin-bottom:8px; }}
 
   .badge {{ display:inline-block; padding:3px 9px; border-radius:9999px;
-            font-size:10px; font-weight:700; }}
+            font-size:13px; font-weight:700; }}
   .b-up   {{ background:#D1FAE5; color:#065F46; }}
   .b-down {{ background:#FEE2E2; color:#991B1B; }}
   .b-flat {{ background:#FEF3C7; color:#78350F; }}
 
-  .tbl {{ width:100%; border-collapse:collapse; font-size:11px; }}
+  .tbl {{ width:100%; border-collapse:collapse; font-size:14px; }}
   .tbl th {{ padding:7px 10px; background:{NAVY}; color:#fff;
-             font-weight:600; text-align:left; font-size:10px; }}
+             font-weight:600; text-align:left; font-size:13px; }}
   .tbl td {{ padding:5px 10px; border-bottom:1px solid {BORDER}; color:#374151; }}
   .tbl tr:last-child td {{ border-bottom:none; }}
 
   .div  {{ border:none; border-top:1px solid rgba(255,255,255,0.15); margin:10px 0; }}
-  .note {{ font-size:10px; color:#94A3B8; margin-top:6px; }}
+  .note {{ font-size:13px; color:#94A3B8; margin-top:6px; }}
   label {{ color:rgba(255,255,255,0.85) !important; }}
   .stSelectbox > div > div {{ background:{CARD}; border-radius:8px; }}
-  .stFileUploader {{ background:{CARD}; border-radius:10px; padding:6px; }}
 
   .sec-head {{
       text-align:center; color:#fff;
-      font-size:22px; font-weight:800; letter-spacing:0.03em;
+      font-size:24px; font-weight:800; letter-spacing:0.03em;
       margin:18px 0 4px;
   }}
   .sec-sub {{
       text-align:center; color:rgba(255,255,255,0.5);
-      font-size:11px; margin-bottom:14px;
+      font-size:13px; margin-bottom:14px;
   }}
 </style>
 """, unsafe_allow_html=True)
@@ -207,10 +226,10 @@ st.markdown(f"""
 <div style="display:flex;align-items:center;gap:16px;padding:2px 0 12px">
   <img src="{LOGO}" style="width:140px;height:auto;filter:brightness(0) invert(1);">
   <div>
-    <div style="font-size:22px;font-weight:800;color:#fff;line-height:1.1">
+    <div style="font-size:24px;font-weight:800;color:#fff;line-height:1.1">
       Sales Demand Forecast{ext_pill}
     </div>
-    <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:3px">
+    <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:3px">
       Upload your sales CSV - feature engineering, external data merging, and forecasting run automatically.
     </div>
   </div>
@@ -399,8 +418,6 @@ with uRR:
                         use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown("<hr class='div'>", unsafe_allow_html=True)
-
 if uploaded and run_btn:
     st.session_state.update(rb=uploaded.getvalue(), sc=sales_col_sel,
                              inf=info, mtype=model_type_sel)
@@ -483,7 +500,7 @@ if st.session_state.get("results"):
 
         st.markdown(f"""
         <div style="text-align:center;margin-bottom:12px">
-          <div style="font-size:22px;font-weight:800;color:#fff;">
+          <div style="font-size:24px;font-weight:800;color:#fff;">
             Product {sel_pid} - History + Forecast
           </div>
         </div>""", unsafe_allow_html=True)
@@ -511,7 +528,7 @@ if st.session_state.get("results"):
         with xai_col:
             st.markdown(f"""
             <div class='tile' style='min-height:300px'>
-              <div style='font-size:18px;font-weight:800;color:{NAVY};
+              <div style='font-size:20px;font-weight:800;color:{NAVY};
                           border-bottom:2px solid {BORDER};padding-bottom:10px;
                           margin-bottom:10px'>
                 Explainability
@@ -527,7 +544,7 @@ if st.session_state.get("results"):
     """, unsafe_allow_html=True)
 
     # Row 1: Overview+Prioritisation | Total Demand chart
-    r1c1, r1c2 = st.columns(2, gap="medium")
+    r1c1, r1c2 = st.columns([1, 1], gap="medium")
 
     with r1c1:
         top5     = smry.nlargest(5,"forecast_total").reset_index(drop=True)
@@ -539,7 +556,7 @@ if st.session_state.get("results"):
             <td>{arrow(r['pct_change'])}</td>
           </tr>""" for i, (_, r) in enumerate(top5.iterrows()))
         st.markdown(f"""
-        <div class='tile'>
+        <div class='tile' style='min-height:560px'>
           <div class='tile-label'>Overview</div>
           <div class='tile-title'>Key Numbers</div>
           <div class='kpi-row'>
@@ -572,32 +589,59 @@ if st.session_state.get("results"):
           </div>
           <hr class='tile-divider'>
           <div class='tile-label'>Prioritisation</div>
-          <div class='tile-title'>Top 5 by Forecasted Volume</div>
+          <div class='tile-title'>Top 5 by Forecasted Volume (Total units across all 4 periods)</div>
           <table class='tbl'>
             <tr><th>#</th><th>Product</th><th>Total forecast</th><th>Trend</th></tr>
             {rows_top}
           </table>
-          <p class='note'>Total units across all 4 periods.</p>
         </div>""", unsafe_allow_html=True)
 
     with r1c2:
-        st.markdown(f"""<div class='tile'>
-          <div class='tile-label'>Forecast</div>
-          <div class='tile-title'>Total Demand - Next 4 Periods</div>""",
-          unsafe_allow_html=True)
-        fig, ax = white_ax((7, 3.1))
-        plabels = ["Period 1","Period 2","Period 3","Period 4"]
-        bars = ax.bar(plabels, period_tots, color=BLUE, width=0.45, zorder=3)
-        ax.yaxis.grid(True, color=BORDER, zorder=0); ax.set_axisbelow(True)
-        for b, v in zip(bars, period_tots):
-            ax.text(b.get_x()+b.get_width()/2, b.get_height()+total_dem*0.0006,
-                    f"{v:,.0f}", ha="center", va="bottom", fontsize=10,
-                    color=NAVY, fontweight="bold")
-        ax.set_ylabel("Units", color="#64748B", fontsize=9)
-        ax.tick_params(axis="x", colors=NAVY, labelsize=10)
-        plt.tight_layout(pad=0.4)
-        st.pyplot(fig, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        plabels = ["Period 1", "Period 2", "Period 3", "Period 4"]
+        ymax = max(period_tots) * 1.18
+
+        fig_pl = go.Figure(go.Bar(
+            x=plabels,
+            y=period_tots,
+            marker_color=BLUE,
+            width=0.45,
+            text=[f"{v:,.0f}" for v in period_tots],
+            textposition="outside",
+            textfont=dict(size=14, color=NAVY, family="Arial Black"),
+            cliponaxis=False,
+        ))
+
+        fig_pl.update_layout(
+            paper_bgcolor=CARD,
+            plot_bgcolor=CARD,
+            height=560,
+            margin=dict(l=60, r=20, t=90, b=40),
+            yaxis=dict(
+                title="Units",
+                title_font=dict(size=12, color="#64748B"),
+                tickfont=dict(size=12, color="#374151"),
+                gridcolor=BORDER,
+                range=[0, ymax],
+                zeroline=False,
+            ),
+            xaxis=dict(
+                tickfont=dict(size=14, color=NAVY),
+                showgrid=False,
+            ),
+            annotations=[
+                dict(x=0.0, y=1.13, xref="paper", yref="paper",
+                     text="FORECAST", showarrow=False,
+                     font=dict(size=10, color="#94A3B8", family="Arial"),
+                     xanchor="left"),
+                dict(x=0.0, y=1.07, xref="paper", yref="paper",
+                     text="Total Demand - Next 4 Periods", showarrow=False,
+                     font=dict(size=14, color=NAVY, family="Arial Black"),
+                     xanchor="left"),
+            ],
+            showlegend=False,
+        )
+
+        st.plotly_chart(fig_pl, use_container_width=True)
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
@@ -616,14 +660,13 @@ if st.session_state.get("results"):
             <td>{badge(r['pct_change'])}</td>
           </tr>""" for _, r in movers.iterrows())
         st.markdown(f"""
-        <div class='tile'>
+        <div class='tile' style='min-height:560px'>
           <div class='tile-label'>Analysis</div>
           <div class='tile-title'>Biggest Movers vs Previous Period</div>
           <table class='tbl'>
             <tr><th>Product</th><th>Prev 4 avg</th><th>Forecast avg</th><th>Change</th></tr>
             {rows_mv}
           </table>
-          <p class='note'>Top 5 rising + top 5 falling vs last 4 actual periods.</p>
         </div>""", unsafe_allow_html=True)
 
     with r2c2:
@@ -650,11 +693,11 @@ if st.session_state.get("results"):
 
         # min-height set to match Biggest Movers tile (10 rows ~ 420px)
         st.markdown(f"""
-        <div class='tile' style='min-height:420px'>
+        <div class='tile' style='min-height:560px'>
           <div class='tile-label'>Demand Trajectory</div>
           <div class='tile-title'>Period-by-Period Trend</div>
           <div style='margin-bottom:12px'>
-            <span class='badge {traj_cls}' style='font-size:11px;padding:4px 12px'>
+            <span class='badge {traj_cls}' style='font-size:14px;padding:4px 12px'>
               {traj_lbl} &nbsp; P1 to P4: {tsign}
             </span>
           </div>
