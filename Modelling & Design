@@ -1,0 +1,51 @@
+\section{Modelling \& Design}
+\subsection{Group Project Structure}
+This thesis is part of a collaborative group project consisting of four members. 
+Each two members are responsible for developing and evaluating a separate 
+forecasting model. They use the identical data and preprocessing conditions. The two models 
+are integrated into the shared dashboard artefact. Table~\ref{tab:group_split} 
+shows the model selections across group members.
+
+\begin{table}[h!]
+\centering
+\caption{Division of modelling work across group members.}
+\label{tab:group_split}
+\begin{tabular}{ll}
+\toprule
+\textbf{Group Member} & \textbf{Model} \\
+\midrule
+Max Rondelli          & Name model \\
+Samuil Radulov        & name model \\
+Sofia Shulman        & name model \\
+Muhan Wang        & name model \\
+\bottomrule
+\end{tabular}
+\end{table}
+The shared components of the project were developed togeter, as described in 
+the Business Understanding and Data Understanding chapters.
+
+\subsection{Artefact Design}
+The artefact produced in this project is an interactive web-based dashboard built 
+using Python. The dashboard allows a user to upload their historical
+sales data in CSV format, select a forecasting model and receive a weekly demand 
+forecast together with an explanation of the prediction. The design follows the 
+requirements of the MoSCoW analysis in the Business Understanding Chapter: it 
+must be usable by non-technical users, provide explanations for every forecast and 
+support multiple model options.
+\\\\
+\textit{Explain what the dashboard looks like}
+
+\subsection{Selected Model and Motivation}
+This thesis focuses on XGBoost (Extreme Gradient Boosting) as the duo 
+forecasting model. XGBoost is a gradient boosting algorithm that builds an ensemble 
+of decision trees sequentially, where each tree corrects the residual errors of the 
+previous one \citep{chen2016xgboost}.
+\\\\
+XGBoost is particularly works well with this project for three reasons. First, it 
+handles tabular data with mixed feature types effectively \citep{chen2016xgboost}. This is relevant because it combines sales history, weather and calendar features in the dataset. Second, it is robust to outliers and missing values. This is important given the data quality mentioned in the Data Understanding 
+chapter. Third, and most importantly for this project, XGBoost produces feature 
+importance scores that quantify the contribution of each input variable to the 
+model's predictions \citep{carmona2022black}. Combined with SHAP values, XGBoost will be a good way for explainable demand forecasting.
+
+\subsection{Implementation}
+The implementation of the model is currently in progress. 
