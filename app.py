@@ -88,25 +88,44 @@ st.markdown(f"""
   .stButton>button:hover   {{ background:#1D4ED8!important; }}
   .stButton>button:disabled {{ background:#4B6A9B!important; opacity:0.6!important; }}
 
-  /* ── Upload row: shrink file dropzone, grow selectboxes ─────────────── */
+  /* ── Upload row: shrink file dropzone to match selectbox height ─────── */
+  /* Target the section wrapper inside the uploader */
+  .stFileUploader section {{
+      padding: 0 !important;
+      min-height: 0 !important;
+      border-radius: 8px !important;
+  }}
+  /* Target the actual dropzone */
   [data-testid="stFileUploaderDropzone"] {{
-      padding: 5px 10px !important;
+      padding: 6px 12px !important;
+      min-height: 0 !important;
+      flex-direction: row !important;
+      align-items: center !important;
+      gap: 10px !important;
+  }}
+  /* Hide large SVG cloud icon */
+  [data-testid="stFileUploaderDropzone"] svg {{
+      display: none !important;
+  }}
+  /* Compact the text spans */
+  [data-testid="stFileUploaderDropzone"] span,
+  [data-testid="stFileUploaderDropzone"] small {{
+      font-size: 11px !important;
+      line-height: 1.3 !important;
+  }}
+  /* Compact the browse button */
+  [data-testid="stFileUploaderDropzone"] button {{
+      padding: 0.3rem 0.9rem !important;
+      font-size: 12px !important;
       min-height: 0 !important;
   }}
-  [data-testid="stFileUploaderDropzone"] svg {{
-      height: 18px !important; width: 18px !important;
+  /* Grow selectboxes to match — add outer padding + inner min-height */
+  div[data-baseweb="select"] {{
+      min-height: 52px !important;
   }}
-  [data-testid="stFileUploaderDropzone"] span {{
-      font-size: 11px !important;
-  }}
-  [data-testid="stFileUploaderDropzone"] small {{
-      font-size: 9px !important;
-  }}
-  /* Increase selectbox height by ~20% via inner padding */
   div[data-baseweb="select"] > div:first-child {{
-      padding-top: 10px !important;
-      padding-bottom: 10px !important;
-      min-height: 50px !important;
+      min-height: 52px !important;
+      align-items: center !important;
   }}
 
   /* ── Cards / tiles ───────────────────────────────────────────────────── */
@@ -592,7 +611,7 @@ if st.session_state.get("results"):
           <div class='tile-label'>Forecast</div>
           <div class='tile-title'>Total Demand — Next 4 Periods</div>""",
           unsafe_allow_html=True)
-        fig, ax = white_ax((7, 4.5))
+        fig, ax = white_ax((7, 3.1))
         plabels = ["Period 1","Period 2","Period 3","Period 4"]
         bars = ax.bar(plabels, period_tots, color=BLUE, width=0.45, zorder=3)
         ax.yaxis.grid(True, color=BORDER, zorder=0); ax.set_axisbelow(True)
@@ -665,7 +684,7 @@ if st.session_state.get("results"):
         traj_sym = "▲" if traj_pct > 2 else ("▼" if traj_pct < -2 else "▶")
 
         st.markdown(f"""
-        <div class='tile'>
+        <div class='tile' style='min-height:420px'>
           <div class='tile-label'>Demand Trajectory</div>
           <div class='tile-title'>Period-by-Period Trend</div>
           <div style='margin-bottom:12px'>
@@ -679,6 +698,7 @@ if st.session_state.get("results"):
           </table>
           <p class='note'>Compares each forecast period to the previous one across all products.</p>
         </div>""", unsafe_allow_html=True)
+
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
