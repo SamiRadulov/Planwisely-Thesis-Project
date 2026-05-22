@@ -84,35 +84,50 @@ st.markdown(f"""
   .stButton>button:hover   {{ background:#1D4ED8!important; }}
   .stButton>button:disabled {{ background:#4B6A9B!important; opacity:0.6!important; }}
 
-  /* FILE UPLOADER — match height of selectboxes (52px) */
-  .stFileUploader section {{
-      padding: 0 !important;
-      min-height: 52px !important;
-      border-radius: 8px !important;
-      display: flex !important;
-      align-items: center !important;
-  }}
-  [data-testid="stFileUploaderDropzone"] {{
-      padding: 6px 12px !important;
-      min-height: 0 !important;
-      flex-direction: row !important;
-      align-items: center !important;
-      gap: 10px !important;
-      width: 100% !important;
-  }}
-  [data-testid="stFileUploaderDropzone"] svg {{
-      display: none !important;
-  }}
-  [data-testid="stFileUploaderDropzone"] span,
-  [data-testid="stFileUploaderDropzone"] small {{
-      font-size: 11px !important;
-      line-height: 1.3 !important;
-  }}
-  [data-testid="stFileUploaderDropzone"] button {{
-      padding: 0.3rem 0.9rem !important;
-      font-size: 12px !important;
-      min-height: 0 !important;
-  }}
+  /* FILE UPLOADER — compact uploaded file tile */
+.stFileUploader {
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+.stFileUploader section {
+    padding: 0 !important;
+    min-height: 52px !important;
+    height: 52px !important;
+    border-radius: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+[data-testid="stFileUploaderDropzone"] {
+    padding: 0 10px !important;
+    min-height: 52px !important;
+    height: 52px !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+/* uploaded file chip */
+[data-testid="stFileUploaderFile"] {
+    margin-top: 0 !important;
+    padding: 4px 8px !important;
+    min-height: 38px !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+/* remove extra top whitespace inside uploaded file */
+[data-testid="stFileUploaderFile"] > div {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+    align-items: center !important;
+}
+
+/* file icon alignment */
+[data-testid="stFileUploaderFile"] svg {
+    margin-top: 0 !important;
+    align-self: center !important;
+}
   /* SELECTBOXES — 52px height */
   div[data-baseweb="select"] {{
       min-height: 52px !important;
@@ -362,7 +377,7 @@ def arrow(pc):
     return             f"<span style='color:{AMBER};font-weight:800'>flat</span>"
 
 # UPLOAD ROW
-uL, uM, uR, uRR = st.columns([3.5, 1.5, 1.5, 1], gap="medium")
+uL, uM, uR, uRR = st.columns([2.3, 1, 1, 0.7], gap="medium")
 with uL:
     uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
 with uM:
@@ -379,7 +394,7 @@ with uR:
             index=opts.index(info["sales_col"]) if info.get("sales_col") in opts else 0
         )
 with uRR:
-    st.markdown("<div style='padding-top:25px'>", unsafe_allow_html=True)
+    st.markdown("<div style='padding-top:24px'>", unsafe_allow_html=True)
     run_btn = st.button("Run", type="primary", disabled=(uploaded is None),
                         use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
