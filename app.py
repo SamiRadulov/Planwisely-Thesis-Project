@@ -1,9 +1,13 @@
 import io
 import warnings
+import pathlib
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Ridge, Lasso
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.feature_selection import VarianceThreshold
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 warnings.filterwarnings("ignore")
@@ -19,97 +23,117 @@ CARD   = "#FFFFFF"
 BGCARD = "#F1F5F9"
 BORDER = "#E2E8F0"
 
+# ── External data (weather + holidays) ────────────────────────────────────────
+_HERE = pathlib.Path(__file__).parent
+try:
+    _WEATHER_RAW = pd.read_csv(_HERE / "weather_weekly.csv")
+    _HOLIDAY_RAW = pd.read_csv(_HERE / "holiday_weekly.csv")
+    HAS_EXTERNAL = True
+    EXT_WEATHER_COLS = ["temp_mean","temp_min","temp_max","precip_sum","sunshine_sum","temp_anomaly","heavy_rain"]
+    EXT_HOLIDAY_COLS = ["has_holiday","min_days_to_holiday","hol_ascension","hol_christmas",
+                        "hol_easter","hol_kings_day","hol_liberation_day","hol_new_year","hol_pentecost"]
+    # Weekly historical averages for weather (used when forecasting future weeks)
+    _WEATHER_AVGS = _WEATHER_RAW.groupby("week")[EXT_WEATHER_COLS].mean().reset_index()
+except Exception:
+    _WEATHER_RAW = _HOLIDAY_RAW = _WEATHER_AVGS = None
+    HAS_EXTERNAL = False
+    EXT_WEATHER_COLS = []
+    EXT_HOLIDAY_COLS = []
+
+EXT_COLS = EXT_WEATHER_COLS + EXT_HOLIDAY_COLS
+
+# ── Feature columns ────────────────────────────────────────────────────────────
+FCOLS_BASE = [
+    "trend","month","week_of_year","quarter",
+    "is_month_start","is_month_end",
+    "month_sin","month_cos","week_sin","week_cos",
+    "lag_1","lag_2","lag_4","lag_8",
+    "rolling_mean_4","rolling_mean_8","rolling_std_4","rolling_std_8",
+]
+FCOLS = FCOLS_BASE + EXT_COLS
+
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Planwisely – Sales Forecast", page_icon="📈", layout="wide")
 
 st.markdown(f"""
 <style>
-  /* Full navy background */
   .stApp {{ background:{NAVY}; }}
-  .block-container {{ padding:1.5rem 2.5rem 3rem; max-width:100%; }}
+  .block-container {{ padding:1rem 2rem 2rem; max-width:100%; }}
 
-  /* Buttons */
   .stButton>button {{
       background:{BLUE}!important; color:#fff!important; border:none!important;
-      border-radius:8px!important; padding:0.55rem 2rem!important;
-      font-weight:600!important; font-size:15px!important; width:100%;
+      border-radius:8px!important; padding:0.5rem 1.5rem!important;
+      font-weight:600!important; font-size:14px!important; width:100%;
   }}
   .stButton>button:hover {{ background:#1D4ED8!important; }}
   .stButton>button:disabled {{ background:#4B6A9B!important; opacity:0.6!important; }}
 
-  /* White card tile */
   .tile {{
-      background:{CARD}; border-radius:16px;
-      padding:24px 28px; border:1px solid {BORDER};
+      background:{CARD}; border-radius:12px;
+      padding:18px 22px; border:1px solid {BORDER};
       height:100%;
   }}
   .tile-label {{
-      font-size:11px; font-weight:700; letter-spacing:.1em;
-      text-transform:uppercase; color:#94A3B8; margin-bottom:4px;
+      font-size:10px; font-weight:700; letter-spacing:.1em;
+      text-transform:uppercase; color:#94A3B8; margin-bottom:2px;
   }}
   .tile-title {{
-      font-size:17px; font-weight:700; color:{NAVY}; margin-bottom:18px;
+      font-size:15px; font-weight:700; color:{NAVY}; margin-bottom:12px;
   }}
 
-  /* KPI */
   .kpi-row {{ display:flex; gap:0; }}
   .kpi-cell {{
-      flex:1; padding-right:20px; margin-right:20px;
+      flex:1; padding-right:16px; margin-right:16px;
       border-right:1px solid {BORDER};
   }}
   .kpi-cell:last-child {{ border-right:none; padding-right:0; margin-right:0; }}
-  .kpi-num {{ font-size:40px; font-weight:800; color:{NAVY}; line-height:1; }}
-  .kpi-sub {{ font-size:12px; color:#64748B; margin-top:5px; }}
+  .kpi-num {{ font-size:34px; font-weight:800; color:{NAVY}; line-height:1; }}
+  .kpi-sub {{ font-size:11px; color:#64748B; margin-top:3px; }}
 
-  /* Badges */
-  .badge {{ display:inline-block; padding:3px 10px; border-radius:9999px; font-size:12px; font-weight:700; }}
+  .badge {{ display:inline-block; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:700; }}
   .b-up   {{ background:#D1FAE5; color:#065F46; }}
   .b-down {{ background:#FEE2E2; color:#991B1B; }}
   .b-flat {{ background:#FEF3C7; color:#78350F; }}
 
-  /* Table */
-  .tbl {{ width:100%; border-collapse:collapse; font-size:13px; }}
-  .tbl th {{ padding:9px 12px; background:{NAVY}; color:#fff; font-weight:600; text-align:left; font-size:12px; }}
-  .tbl td {{ padding:8px 12px; border-bottom:1px solid {BORDER}; color:#374151; }}
+  .tbl {{ width:100%; border-collapse:collapse; font-size:12px; }}
+  .tbl th {{ padding:7px 10px; background:{NAVY}; color:#fff; font-weight:600; text-align:left; font-size:11px; }}
+  .tbl td {{ padding:6px 10px; border-bottom:1px solid {BORDER}; color:#374151; }}
   .tbl tr:last-child td {{ border-bottom:none; }}
 
-  /* Divider */
-  .div {{ border:none; border-top:1px solid rgba(255,255,255,0.15); margin:20px 0; }}
-  .gap {{ height:18px; }}
-  .note {{ font-size:11px; color:#94A3B8; margin-top:10px; }}
-
-  /* Selectbox label colour on dark bg */
+  .div {{ border:none; border-top:1px solid rgba(255,255,255,0.15); margin:12px 0; }}
+  .note {{ font-size:10px; color:#94A3B8; margin-top:6px; }}
   label {{ color:rgba(255,255,255,0.85) !important; }}
   .stSelectbox > div > div {{ background:{CARD}; border-radius:8px; }}
-
-  /* File uploader */
-  .stFileUploader {{ background:{CARD}; border-radius:12px; padding:12px; }}
-
-  /* Section heading on dark bg */
+  .stFileUploader {{ background:{CARD}; border-radius:10px; padding:10px; }}
   .sec-head {{
-      color:rgba(255,255,255,0.9); font-size:13px; font-weight:700;
-      letter-spacing:.08em; text-transform:uppercase; margin-bottom:14px;
+      color:rgba(255,255,255,0.9); font-size:12px; font-weight:700;
+      letter-spacing:.08em; text-transform:uppercase; margin:10px 0 8px;
   }}
+  .gap8  {{ height:8px; }}
+  .gap14 {{ height:14px; }}
 </style>
 """, unsafe_allow_html=True)
 
 # ── Header ─────────────────────────────────────────────────────────────────────
+ext_badge = ('<span style="background:#10B981;color:#fff;font-size:10px;font-weight:700;'
+             'padding:2px 8px;border-radius:9999px;margin-left:10px">'
+             '✓ Weather &amp; Holiday features loaded</span>') if HAS_EXTERNAL else ""
 st.markdown(f"""
-<div style="display:flex;align-items:center;gap:20px;padding:4px 0 22px">
-  <img src="{LOGO}" style="width:170px;height:auto;filter:brightness(0) invert(1);">
+<div style="display:flex;align-items:center;gap:18px;padding:4px 0 14px">
+  <img src="{LOGO}" style="width:145px;height:auto;filter:brightness(0) invert(1);">
   <div>
-    <div style="font-size:26px;font-weight:800;color:#fff;line-height:1.15">
-      Sales Demand Forecast
+    <div style="font-size:23px;font-weight:800;color:#fff;line-height:1.15">
+      Sales Demand Forecast{ext_badge}
     </div>
-    <div style="font-size:13px;color:rgba(255,255,255,0.6);margin-top:5px">
-      Upload your sales data — the next 4 periods are forecasted automatically across all products.
+    <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:4px">
+      Upload your sales CSV — feature engineering, external data merging, and forecasting run automatically.
     </div>
   </div>
 </div>
 <hr class='div'>
 """, unsafe_allow_html=True)
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Core helpers ───────────────────────────────────────────────────────────────
 def detect_structure(df):
     cl = {c: c.lower() for c in df.columns}
     product_col = next((c for c,l in cl.items() if l in ("product_id","product","sku","item_id")), None)
@@ -139,6 +163,7 @@ def build_date_series(df, info):
     return pd.to_datetime(df[info["date_col"]], infer_datetime_format=True, errors="coerce")
 
 def feature_engineering(df_in):
+    """Build time-series features and merge external weather/holiday data automatically."""
     df = df_in[["date","sales"]].copy().sort_values("date").reset_index(drop=True)
     df["sales"] = pd.to_numeric(df["sales"], errors="coerce")
     df = df.dropna(subset=["sales"])
@@ -153,53 +178,89 @@ def feature_engineering(df_in):
     df["month_cos"] = np.cos(2*np.pi*df["month"]/12)
     df["week_sin"]  = np.sin(2*np.pi*df["week_of_year"]/52)
     df["week_cos"]  = np.cos(2*np.pi*df["week_of_year"]/52)
-    df["dow_sin"]   = np.sin(2*np.pi*df["day_of_week"]/7)
-    df["dow_cos"]   = np.cos(2*np.pi*df["day_of_week"]/7)
     for lag in [1,2,4,8]:
         df[f"lag_{lag}"] = df["sales"].shift(lag)
     for w in [4,8]:
         df[f"rolling_mean_{w}"] = df["sales"].shift(1).rolling(w,min_periods=1).mean()
         df[f"rolling_std_{w}"]  = df["sales"].shift(1).rolling(w,min_periods=1).std().fillna(0)
     df["trend"] = np.arange(len(df))
+    # ── Auto-merge external features ──────────────────────────────────────────
+    if HAS_EXTERNAL:
+        w = _WEATHER_RAW.rename(columns={"week":"week_of_year"})
+        df = df.merge(w[["year","week_of_year"]+EXT_WEATHER_COLS], on=["year","week_of_year"], how="left")
+        h = _HOLIDAY_RAW.rename(columns={"week":"week_of_year"})
+        df = df.merge(h[["year","week_of_year"]+EXT_HOLIDAY_COLS], on=["year","week_of_year"], how="left")
+        for col in EXT_WEATHER_COLS:
+            if col in df.columns:
+                df[col] = df[col].fillna(df[col].mean())
+        for col in EXT_HOLIDAY_COLS:
+            if col in df.columns:
+                df[col] = df[col].fillna(0)
     return df.dropna(subset=["lag_1","lag_2","lag_4","lag_8"])
 
-FCOLS = [
-    "trend","year","month","week_of_year","quarter",
-    "is_month_start","is_month_end",
-    "month_sin","month_cos","week_sin","week_cos","dow_sin","dow_cos",
-    "lag_1","lag_2","lag_4","lag_8",
-    "rolling_mean_4","rolling_mean_8","rolling_std_4","rolling_std_8",
-]
+def _ext_for_date(nd):
+    """Return external features for a forecast date (weather=week avg, holidays=exact lookup)."""
+    if not HAS_EXTERNAL:
+        return {}
+    week = int(nd.isocalendar()[1])
+    year = int(nd.isocalendar()[0])
+    r = {}
+    # Weather: use historical week-of-year average
+    w_row = _WEATHER_AVGS[_WEATHER_AVGS["week"] == week]
+    for col in EXT_WEATHER_COLS:
+        r[col] = float(w_row[col].values[0]) if len(w_row) > 0 else 0.0
+    # Holidays: exact year+week lookup
+    h_row = _HOLIDAY_RAW[(_HOLIDAY_RAW["year"]==year) & (_HOLIDAY_RAW["week"]==week)]
+    for col in EXT_HOLIDAY_COLS:
+        r[col] = float(h_row[col].values[0]) if len(h_row) > 0 else 0.0
+    return r
 
-def train_model(df):
-    m = LinearRegression(); m.fit(df[FCOLS], df["sales"]); return m
+def train_model(df, model_type="Ridge"):
+    """Train Ridge or Lasso pipeline on available feature columns."""
+    fcols = [c for c in FCOLS if c in df.columns]
+    if model_type == "Lasso":
+        reg = Lasso(alpha=1.0, max_iter=10000)
+    else:
+        reg = Ridge(alpha=10.0)
+    model = Pipeline([
+        ("var",    VarianceThreshold(threshold=0.0)),
+        ("scaler", StandardScaler()),
+        ("reg",    reg),
+    ])
+    model.fit(df[fcols], df["sales"])
+    return model, fcols
 
-def forecast_4(model, df):
-    delta = df["date"].iloc[-1] - df["date"].iloc[-2]
-    hist  = list(df["sales"]); rows = []
+def forecast_4(model, fcols, df):
+    """Recursively forecast 4 periods ahead with clipping."""
+    delta    = df["date"].iloc[-1] - df["date"].iloc[-2]
+    hist     = list(df["sales"]); rows = []
+    hist_max = df["sales"].max() * 3
+    hist_p10 = max(0, df["sales"].quantile(0.10) * 0.5)
     for i in range(4):
         nd = df["date"].iloc[-1] + (i+1)*delta
-        r  = {"date":nd,"year":nd.isocalendar()[0],"month":nd.month,
-              "week_of_year":nd.isocalendar()[1],"day_of_week":nd.dayofweek,
-              "is_month_start":int(nd.day<=7),"is_month_end":int(nd.day>=24),
-              "quarter":nd.quarter,"trend":len(df)+i}
-        r["month_sin"]=np.sin(2*np.pi*r["month"]/12)
-        r["month_cos"]=np.cos(2*np.pi*r["month"]/12)
-        r["week_sin"] =np.sin(2*np.pi*r["week_of_year"]/52)
-        r["week_cos"] =np.cos(2*np.pi*r["week_of_year"]/52)
-        r["dow_sin"]  =np.sin(2*np.pi*r["day_of_week"]/7)
-        r["dow_cos"]  =np.cos(2*np.pi*r["day_of_week"]/7)
+        r  = {"date":nd, "year":int(nd.isocalendar()[0]), "month":nd.month,
+              "week_of_year":int(nd.isocalendar()[1]), "day_of_week":nd.dayofweek,
+              "is_month_start":int(nd.day<=7), "is_month_end":int(nd.day>=24),
+              "quarter":nd.quarter, "trend":len(df)+i}
+        r["month_sin"] = np.sin(2*np.pi*r["month"]/12)
+        r["month_cos"] = np.cos(2*np.pi*r["month"]/12)
+        r["week_sin"]  = np.sin(2*np.pi*r["week_of_year"]/52)
+        r["week_cos"]  = np.cos(2*np.pi*r["week_of_year"]/52)
         for lag in [1,2,4,8]:
             r[f"lag_{lag}"] = hist[-lag] if len(hist)>=lag else np.nan
         for w in [4,8]:
-            h2=hist[-w:]; r[f"rolling_mean_{w}"]=np.mean(h2)
-            r[f"rolling_std_{w}"]=np.std(h2) if len(h2)>1 else 0.0
-        pred=max(model.predict(np.array([[r[c] for c in FCOLS]]))[0],0)
-        hist.append(pred); r["forecast"]=pred; rows.append(r)
+            h2 = hist[-w:]
+            r[f"rolling_mean_{w}"] = np.mean(h2)
+            r[f"rolling_std_{w}"]  = np.std(h2) if len(h2)>1 else 0.0
+        r.update(_ext_for_date(nd))
+        pred = model.predict(np.array([[r[c] for c in fcols]]))[0]
+        pred = float(np.clip(pred, hist_p10, hist_max))
+        hist.append(pred); r["forecast"] = pred; rows.append(r)
     return pd.DataFrame(rows)
 
 @st.cache_data(show_spinner=False)
-def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col, day_col, product_col):
+def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col, day_col,
+            product_col, model_type):
     df   = pd.read_csv(io.BytesIO(raw_bytes))
     info = dict(date_mode=date_mode, date_col=date_col, year_col=year_col,
                 month_col=month_col, day_col=day_col, product_col=product_col)
@@ -212,13 +273,13 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col, day_
         sub["sales"] = pd.to_numeric(sub[sales_col], errors="coerce")
         feat = feature_engineering(sub[["date","sales"]].dropna())
         if len(feat) < 20: continue
-        mdl  = train_model(feat)
-        fcast= forecast_4(mdl, feat)
-        out[pid if pid is not None else "all"] = {"history":feat,"forecast":fcast}
+        mdl, fcols = train_model(feat, model_type)
+        fcast      = forecast_4(mdl, fcols, feat)
+        out[pid if pid is not None else "all"] = {"history":feat, "forecast":fcast}
     return out
 
-# ── Chart helpers ──────────────────────────────────────────────────────────────
-def white_ax(figsize=(9,3.5)):
+# ── Chart helper ───────────────────────────────────────────────────────────────
+def white_ax(figsize=(9,3)):
     fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor(CARD)
     ax.set_facecolor(CARD)
@@ -226,58 +287,75 @@ def white_ax(figsize=(9,3.5)):
     for sp in ax.spines.values(): sp.set_edgecolor(BORDER)
     return fig, ax
 
+# ── Badge / arrow helpers ──────────────────────────────────────────────────────
+def badge(pc):
+    if pc >  5: return f"<span class='badge b-up'>▲ +{pc:.1f}%</span>"
+    if pc < -5: return f"<span class='badge b-down'>▼ {pc:.1f}%</span>"
+    return             f"<span class='badge b-flat'>▶ {pc:+.1f}%</span>"
+
+def arrow(pc):
+    if pc >  5: return f"<span style='color:{GREEN};font-size:15px;font-weight:800'>▲</span>"
+    if pc < -5: return f"<span style='color:{RED};font-size:15px;font-weight:800'>▼</span>"
+    return             f"<span style='color:{AMBER};font-size:15px;font-weight:800'>▶</span>"
+
 # ── Upload row ─────────────────────────────────────────────────────────────────
-uL, uM, uR = st.columns([4, 2, 1])
+uL, uM, uR, uRR = st.columns([3.5, 1.5, 1.5, 1], gap="medium")
 with uL:
-    uploaded = st.file_uploader(
-        "Upload sales CSV",
-        type=["csv"], label_visibility="visible"
-    )
+    uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
 with uM:
     sales_col_sel = None
+    info = {}
     if uploaded:
         raw  = pd.read_csv(uploaded)
         info = detect_structure(raw)
         opts = raw.columns.tolist()
         sales_col_sel = st.selectbox("Sales column", opts,
-                                     index=opts.index(info["sales_col"]) if info["sales_col"] else 0)
+                                     index=opts.index(info["sales_col"]) if info.get("sales_col") in opts else 0)
 with uR:
+    model_type_sel = st.selectbox("Model", ["Ridge", "Lasso"], index=0)
+with uRR:
     st.markdown("<div style='padding-top:26px'>", unsafe_allow_html=True)
-    run_btn = st.button("Run Forecast →", type="primary",
-                        disabled=(uploaded is None), use_container_width=True)
+    run_btn = st.button("Run →", type="primary", disabled=(uploaded is None), use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 if uploaded and info.get("date_mode") == "split":
-    st.markdown(f"<p style='color:rgba(255,255,255,0.6);font-size:12px;margin-top:-8px'>"
-                f"Split date detected: <b style='color:#fff'>{info['year_col']} / {info['month_col']} / {info['day_col']}</b>"
-                f" — combined automatically.</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='color:rgba(255,255,255,0.6);font-size:11px;margin-top:-6px'>"
+                f"Split date detected: <b style='color:#fff'>{info['year_col']} / "
+                f"{info['month_col']} / {info['day_col']}</b> — combined automatically.</p>",
+                unsafe_allow_html=True)
 
 st.markdown("<hr class='div'>", unsafe_allow_html=True)
 
-# ── Session state ──────────────────────────────────────────────────────────────
+# ── Session state & execution ──────────────────────────────────────────────────
 if uploaded and run_btn:
-    st.session_state["rb"]   = uploaded.getvalue()
-    st.session_state["sc"]   = sales_col_sel
-    st.session_state["inf"]  = info
-    st.session_state["done"] = False
+    st.session_state["rb"]    = uploaded.getvalue()
+    st.session_state["sc"]    = sales_col_sel
+    st.session_state["inf"]   = info
+    st.session_state["mtype"] = model_type_sel
 
 if "rb" in st.session_state and uploaded is not None:
-    with st.spinner("Running forecasts…"):
+    # Auto-recompute if model type changed
+    _mtype = model_type_sel
+    if st.session_state.get("mtype") != _mtype:
+        st.session_state["mtype"] = _mtype
+    with st.spinner(f"Running {_mtype} forecasts with {'weather + holiday + ' if HAS_EXTERNAL else ''}time-series features…"):
         results = run_all(
             st.session_state["rb"], st.session_state["sc"],
             st.session_state["inf"]["date_mode"], st.session_state["inf"]["date_col"],
             st.session_state["inf"]["year_col"],  st.session_state["inf"]["month_col"],
             st.session_state["inf"]["day_col"],   st.session_state["inf"]["product_col"],
+            _mtype,
         )
     st.session_state["results"] = results
 
+# ── Results ────────────────────────────────────────────────────────────────────
 if st.session_state.get("results"):
     results = st.session_state["results"]
     if not results:
         st.error("No products with ≥20 usable records found.")
         st.stop()
 
-    # ── Summary stats ──────────────────────────────────────────────────────────
+    # Summary stats
     rows = []
     for pid, r in results.items():
         f, h = r["forecast"], r["history"]
@@ -286,7 +364,7 @@ if st.session_state.get("results"):
         pct  = (favg-prev)/prev*100 if prev else 0
         rows.append(dict(product_id=pid, forecast_total=ftot,
                          forecast_avg=favg, prev_avg=prev, pct_change=pct))
-    smry = pd.DataFrame(rows)
+    smry        = pd.DataFrame(rows)
     n_prod      = len(smry)
     total_dem   = smry["forecast_total"].sum()
     avg_prod    = smry["forecast_avg"].mean()
@@ -295,20 +373,71 @@ if st.session_state.get("results"):
     dn_c = (smry["pct_change"] < -5).sum()
     st_c = n_prod - up_c - dn_c
 
-    # ── Badge / arrow helpers ──────────────────────────────────────────────────
-    def badge(pc):
-        if pc >  5: return f"<span class='badge b-up'>▲ +{pc:.1f}%</span>"
-        if pc < -5: return f"<span class='badge b-down'>▼ {pc:.1f}%</span>"
-        return             f"<span class='badge b-flat'>▶ {pc:+.1f}%</span>"
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 1 — Product Detail (shown first)
+    # ══════════════════════════════════════════════════════════════════════════
+    st.markdown("<div class='sec-head'>Product Detail</div>", unsafe_allow_html=True)
 
-    def arrow(pc):
-        if pc >  5: return f"<span style='color:{GREEN};font-size:18px;font-weight:800'>▲</span>"
-        if pc < -5: return f"<span style='color:{RED};font-size:18px;font-weight:800'>▼</span>"
-        return             f"<span style='color:{AMBER};font-size:18px;font-weight:800'>▶</span>"
+    all_pids = sorted(results.keys(), key=lambda x: str(x))
+    sel_pid  = st.selectbox("Select a product to inspect", options=all_pids,
+                            format_func=lambda x: f"Product {x}")
 
-    # ── ROW 1: KPI tile + Bar chart ────────────────────────────────────────────
+    if sel_pid is not None:
+        pr       = results[sel_pid]
+        hist     = pr["history"]
+        fcast    = pr["forecast"]
+        prev_avg = hist["sales"].iloc[-4:].mean() if len(hist)>=4 else hist["sales"].mean()
+
+        # 4 period tiles
+        d1, d2, d3, d4 = st.columns(4, gap="medium")
+        for col, i in zip([d1,d2,d3,d4], range(4)):
+            row       = fcast.iloc[i]
+            date_str  = pd.to_datetime(row["date"]).strftime("%d %b %Y")
+            dp        = (row["forecast"] - prev_avg) / prev_avg * 100 if prev_avg else 0
+            tcls      = "b-up" if dp > 5 else ("b-down" if dp < -5 else "b-flat")
+            tsym      = "▲" if dp > 5 else ("▼" if dp < -5 else "▶")
+            col.markdown(f"""
+            <div class='tile' style='text-align:center;padding:16px 12px'>
+              <div class='tile-label'>Period {i+1}</div>
+              <div style='font-size:11px;color:#64748B;margin-bottom:5px'>{date_str}</div>
+              <div class='kpi-num' style='font-size:28px'>{row['forecast']:,.0f}</div>
+              <div class='kpi-sub'>units forecasted</div>
+              <span class='badge {tcls}' style='margin-top:7px;display:inline-block'>
+                {tsym} {dp:+.1f}% vs prev 4
+              </span>
+            </div>""", unsafe_allow_html=True)
+
+        st.markdown("<div class='gap8'></div>", unsafe_allow_html=True)
+
+        # History + forecast chart
+        st.markdown("<div class='tile'>", unsafe_allow_html=True)
+        st.markdown(f"<div class='tile-label'>Product {sel_pid} — History + Forecast</div>"
+                    f"<div class='tile-title'>Last 52 Periods + Next 4 (±15% confidence band)</div>",
+                    unsafe_allow_html=True)
+        fig2, ax2 = white_ax((14, 3.4))
+        tail = hist.tail(52)
+        ax2.plot(tail["date"], tail["sales"], color=NAVY, linewidth=1.8, label="Historical", zorder=3)
+        ax2.plot(fcast["date"], fcast["forecast"], color=BLUE, linewidth=2.2,
+                 marker="o", markersize=6, label="Forecast", zorder=4)
+        ax2.fill_between(fcast["date"], fcast["forecast"]*0.85, fcast["forecast"]*1.15,
+                         color=BLUE, alpha=0.12, label="±15% band")
+        ax2.axvline(hist["date"].iloc[-1], color=BORDER, linewidth=1.2, linestyle="--")
+        ax2.yaxis.grid(True, color=BORDER, zorder=0); ax2.set_axisbelow(True)
+        ax2.set_ylabel("Units", color="#64748B", fontsize=9)
+        ax2.legend(facecolor=CARD, edgecolor=BORDER, fontsize=9)
+        ax2.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+        fig2.autofmt_xdate()
+        plt.tight_layout(pad=0.4)
+        st.pyplot(fig2, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='gap14'></div>", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 2 — Summary KPIs + Demand Bar Chart
+    # ══════════════════════════════════════════════════════════════════════════
     st.markdown("<div class='sec-head'>Summary</div>", unsafe_allow_html=True)
-    c1, c2 = st.columns([1, 1], gap="large")
+    c1, c2 = st.columns([1, 1], gap="medium")
 
     with c1:
         st.markdown(f"""
@@ -322,26 +451,26 @@ if st.session_state.get("results"):
             </div>
             <div class='kpi-cell'>
               <div class='kpi-num'>{total_dem:,.0f}</div>
-              <div class='kpi-sub'>Total demand — next 4 periods</div>
+              <div class='kpi-sub'>Total demand (4 periods)</div>
             </div>
             <div class='kpi-cell'>
               <div class='kpi-num'>{avg_prod:,.0f}</div>
               <div class='kpi-sub'>Avg per product / period</div>
             </div>
           </div>
-          <hr style='border:none;border-top:1px solid {BORDER};margin:20px 0 16px'>
+          <hr style='border:none;border-top:1px solid {BORDER};margin:12px 0 10px'>
           <div class='kpi-row'>
             <div class='kpi-cell'>
               <span class='badge b-up'>▲ {up_c} products</span>
-              <div class='kpi-sub' style='margin-top:6px'>Trending up (&gt;5%)</div>
+              <div class='kpi-sub' style='margin-top:4px'>Trending up (&gt;5%)</div>
             </div>
             <div class='kpi-cell'>
               <span class='badge b-flat'>▶ {st_c} products</span>
-              <div class='kpi-sub' style='margin-top:6px'>Stable (±5%)</div>
+              <div class='kpi-sub' style='margin-top:4px'>Stable (±5%)</div>
             </div>
             <div class='kpi-cell'>
               <span class='badge b-down'>▼ {dn_c} products</span>
-              <div class='kpi-sub' style='margin-top:6px'>Trending down (&gt;5%)</div>
+              <div class='kpi-sub' style='margin-top:4px'>Trending down (&gt;5%)</div>
             </div>
           </div>
         </div>
@@ -351,24 +480,26 @@ if st.session_state.get("results"):
         st.markdown(f"<div class='tile'><div class='tile-label'>Forecast</div>"
                     f"<div class='tile-title'>Total Demand — Next 4 Periods</div>",
                     unsafe_allow_html=True)
-        fig, ax = white_ax((8, 3.4))
+        fig, ax = white_ax((8, 3))
         plabels = ["Period 1","Period 2","Period 3","Period 4"]
         bars = ax.bar(plabels, period_tots, color=BLUE, width=0.45, zorder=3)
         ax.yaxis.grid(True, color=BORDER, zorder=0); ax.set_axisbelow(True)
         for b, v in zip(bars, period_tots):
-            ax.text(b.get_x()+b.get_width()/2, b.get_height()+total_dem*0.002,
+            ax.text(b.get_x()+b.get_width()/2, b.get_height()+total_dem*0.0008,
                     f"{v:,.0f}", ha="center", va="bottom", fontsize=9, color=NAVY, fontweight="bold")
         ax.set_ylabel("Units", color="#64748B", fontsize=9)
         ax.tick_params(axis="x", colors=NAVY)
-        plt.tight_layout(pad=0.4)
+        plt.tight_layout(pad=0.3)
         st.pyplot(fig, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='gap'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='gap14'></div>", unsafe_allow_html=True)
 
-    # ── ROW 2: Biggest Movers + Top 5 by Volume ────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 3 — Analysis: Movers + Top 5
+    # ══════════════════════════════════════════════════════════════════════════
     st.markdown("<div class='sec-head'>Analysis</div>", unsafe_allow_html=True)
-    c3, c4 = st.columns([1, 1], gap="large")
+    c3, c4 = st.columns([1, 1], gap="medium")
 
     with c3:
         movers = pd.concat([smry.nlargest(5,"pct_change"), smry.nsmallest(5,"pct_change")]) \
@@ -388,11 +519,11 @@ if st.session_state.get("results"):
             <tr><th>Product</th><th>Prev 4 avg</th><th>Forecast avg</th><th>Change</th></tr>
             {rows_h}
           </table>
-          <p class='note'>Comparing next 4 forecast periods vs last 4 actual periods.</p>
+          <p class='note'>Top 5 rising + top 5 falling vs last 4 actual periods.</p>
         </div>""", unsafe_allow_html=True)
 
     with c4:
-        top5 = smry.nlargest(5,"forecast_total").reset_index(drop=True)
+        top5    = smry.nlargest(5,"forecast_total").reset_index(drop=True)
         rows_h2 = "".join(f"""
           <tr>
             <td><b>#{i+1}</b></td>
@@ -408,67 +539,16 @@ if st.session_state.get("results"):
             <tr><th>#</th><th>Product</th><th>Total forecast</th><th>Trend</th></tr>
             {rows_h2}
           </table>
-          <p class='note'>Total units across all 4 periods. Use this to prioritise production capacity.</p>
+          <p class='note'>Total units across all 4 periods. Use to prioritise production capacity.</p>
         </div>""", unsafe_allow_html=True)
 
-    st.markdown("<div class='gap'></div>", unsafe_allow_html=True)
-
-    # ── Product drill-down ─────────────────────────────────────────────────────
-    st.markdown("<div class='sec-head'>Product Detail</div>", unsafe_allow_html=True)
-
-    all_pids = sorted(results.keys(), key=lambda x: str(x))
-    sel_pid  = st.selectbox("Select a product to inspect",
-                            options=all_pids,
-                            format_func=lambda x: f"Product {x}")
-
-    if sel_pid is not None:
-        pr   = results[sel_pid]
-        hist = pr["history"]
-        fcast= pr["forecast"]
-        prev_avg = hist["sales"].iloc[-4:].mean() if len(hist)>=4 else hist["sales"].mean()
-        fc_avg   = fcast["forecast"].mean()
-        pct      = (fc_avg - prev_avg) / prev_avg * 100 if prev_avg else 0
-
-        d1, d2, d3, d4 = st.columns(4, gap="large")
-        for col, i in zip([d1,d2,d3,d4], range(4)):
-            row  = fcast.iloc[i]
-            date_str = pd.to_datetime(row["date"]).strftime("%d %b %Y")
-            col.markdown(f"""
-            <div class='tile' style='text-align:center;padding:20px 16px'>
-              <div class='tile-label'>Period {i+1}</div>
-              <div style='font-size:13px;color:#64748B;margin-bottom:8px'>{date_str}</div>
-              <div class='kpi-num' style='font-size:32px'>{row['forecast']:,.0f}</div>
-              <div class='kpi-sub'>units forecasted</div>
-            </div>""", unsafe_allow_html=True)
-
-        st.markdown("<div class='gap'></div>", unsafe_allow_html=True)
-
-        # Combined history + forecast chart
-        st.markdown("<div class='tile'>", unsafe_allow_html=True)
-        st.markdown(f"<div class='tile-label'>Product {sel_pid} — Historical Sales + 4-Period Forecast</div>",
-                    unsafe_allow_html=True)
-        fig2, ax2 = white_ax((14, 4))
-        tail = hist.tail(52)
-        ax2.plot(tail["date"], tail["sales"], color=NAVY, linewidth=1.8, label="Historical", zorder=3)
-        ax2.plot(fcast["date"], fcast["forecast"], color=BLUE, linewidth=2.2,
-                 marker="o", markersize=6, label="Forecast", zorder=4)
-        ax2.fill_between(fcast["date"], fcast["forecast"]*0.85, fcast["forecast"]*1.15,
-                         color=BLUE, alpha=0.12, label="±15% band")
-        ax2.axvline(hist["date"].iloc[-1], color=BORDER, linewidth=1.2, linestyle="--")
-        ax2.yaxis.grid(True, color=BORDER, zorder=0); ax2.set_axisbelow(True)
-        ax2.set_ylabel("Units", color="#64748B", fontsize=9)
-        ax2.legend(facecolor=CARD, edgecolor=BORDER, fontsize=9)
-        ax2.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
-        fig2.autofmt_xdate()
-        plt.tight_layout(pad=0.5)
-        st.pyplot(fig2, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div class='gap'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='gap14'></div>", unsafe_allow_html=True)
 
     # ── Download ───────────────────────────────────────────────────────────────
     dl = smry[["product_id","forecast_total","forecast_avg","prev_avg","pct_change"]].copy()
     dl.columns = ["Product ID","Total Forecast (4 periods)","Avg per Period","Prev 4 Period Avg","% Change"]
-    st.download_button("⬇ Download Full Forecast CSV",
-                       dl.round(1).to_csv(index=False).encode(),
-                       "planwisely_forecast.csv","text/csv")
+    st.download_button(
+        "Download Full Forecast CSV",
+        dl.round(1).to_csv(index=False).encode(),
+        "planwisely_forecast.csv", "text/csv",
+    )
