@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 warnings.filterwarnings("ignore")
 
-# ── Brand ──────────────────────────────────────────────────────────────────────
 LOGO   = "https://planwisely.ai/wp-content/uploads/2024/08/Planwisely01_1765553.png"
 NAVY   = "#1B3A6B"
 BLUE   = "#2563EB"
@@ -23,7 +22,6 @@ AMBER  = "#F59E0B"
 CARD   = "#FFFFFF"
 BORDER = "#E2E8F0"
 
-# ── External data ──────────────────────────────────────────────────────────────
 _HERE = pathlib.Path(__file__).parent
 try:
     _WEATHER_RAW = pd.read_csv(_HERE / "weather_weekly.csv")
@@ -71,15 +69,13 @@ FEAT_LABELS = {
     "hol_new_year":"New Year","hol_pentecost":"Pentecost",
 }
 
-# ── Page config ────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Planwisely – Sales Forecast", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Planwisely - Sales Forecast", page_icon="??", layout="wide")
 
 st.markdown(f"""
 <style>
   .stApp {{ background:{NAVY}; }}
   .block-container {{ padding:0.9rem 2rem 2rem; max-width:100%; }}
 
-  /* ── Run button ─────────────────────────────────────────────────────── */
   .stButton>button {{
       background:{BLUE}!important; color:#fff!important; border:none!important;
       border-radius:8px!important; padding:0.45rem 1.2rem!important;
@@ -88,38 +84,36 @@ st.markdown(f"""
   .stButton>button:hover   {{ background:#1D4ED8!important; }}
   .stButton>button:disabled {{ background:#4B6A9B!important; opacity:0.6!important; }}
 
-  /* ── Upload row: shrink file dropzone to match selectbox height ─────── */
-  /* Target the section wrapper inside the uploader */
+  /* FILE UPLOADER — match height of selectboxes (52px) */
   .stFileUploader section {{
       padding: 0 !important;
-      min-height: 0 !important;
+      min-height: 52px !important;
       border-radius: 8px !important;
+      display: flex !important;
+      align-items: center !important;
   }}
-  /* Target the actual dropzone */
   [data-testid="stFileUploaderDropzone"] {{
       padding: 6px 12px !important;
       min-height: 0 !important;
       flex-direction: row !important;
       align-items: center !important;
       gap: 10px !important;
+      width: 100% !important;
   }}
-  /* Hide large SVG cloud icon */
   [data-testid="stFileUploaderDropzone"] svg {{
       display: none !important;
   }}
-  /* Compact the text spans */
   [data-testid="stFileUploaderDropzone"] span,
   [data-testid="stFileUploaderDropzone"] small {{
       font-size: 11px !important;
       line-height: 1.3 !important;
   }}
-  /* Compact the browse button */
   [data-testid="stFileUploaderDropzone"] button {{
       padding: 0.3rem 0.9rem !important;
       font-size: 12px !important;
       min-height: 0 !important;
   }}
-  /* Grow selectboxes to match — add outer padding + inner min-height */
+  /* SELECTBOXES — 52px height */
   div[data-baseweb="select"] {{
       min-height: 52px !important;
   }}
@@ -128,7 +122,6 @@ st.markdown(f"""
       align-items: center !important;
   }}
 
-  /* ── Cards / tiles ───────────────────────────────────────────────────── */
   .tile {{
       background:{CARD}; border-radius:12px;
       padding:18px 22px; border:1px solid {BORDER}; height:100%;
@@ -140,11 +133,8 @@ st.markdown(f"""
   .tile-title {{
       font-size:14px; font-weight:700; color:{NAVY}; margin-bottom:10px;
   }}
-  .tile-divider {{
-      border:none; border-top:1px solid {BORDER}; margin:14px 0;
-  }}
+  .tile-divider {{ border:none; border-top:1px solid {BORDER}; margin:14px 0; }}
 
-  /* ── KPI rows ────────────────────────────────────────────────────────── */
   .kpi-row {{ display:flex; gap:0; }}
   .kpi-cell {{
       flex:1; padding-right:14px; margin-right:14px;
@@ -154,7 +144,6 @@ st.markdown(f"""
   .kpi-num {{ font-size:30px; font-weight:800; color:{NAVY}; line-height:1; }}
   .kpi-sub {{ font-size:10px; color:#64748B; margin-top:3px; }}
 
-  /* ── Period tiles ────────────────────────────────────────────────────── */
   .ptile {{
       background:{CARD}; border-radius:12px; border:1px solid {BORDER};
       padding:18px 14px; text-align:center; height:100%;
@@ -166,28 +155,24 @@ st.markdown(f"""
   .ptile-num    {{ font-size:32px; font-weight:800; color:{NAVY}; line-height:1; }}
   .ptile-sub    {{ font-size:10px; color:#64748B; margin-top:4px; margin-bottom:8px; }}
 
-  /* ── Badges ──────────────────────────────────────────────────────────── */
   .badge {{ display:inline-block; padding:3px 9px; border-radius:9999px;
             font-size:10px; font-weight:700; }}
   .b-up   {{ background:#D1FAE5; color:#065F46; }}
   .b-down {{ background:#FEE2E2; color:#991B1B; }}
   .b-flat {{ background:#FEF3C7; color:#78350F; }}
 
-  /* ── Tables ──────────────────────────────────────────────────────────── */
   .tbl {{ width:100%; border-collapse:collapse; font-size:11px; }}
   .tbl th {{ padding:7px 10px; background:{NAVY}; color:#fff;
              font-weight:600; text-align:left; font-size:10px; }}
   .tbl td {{ padding:5px 10px; border-bottom:1px solid {BORDER}; color:#374151; }}
   .tbl tr:last-child td {{ border-bottom:none; }}
 
-  /* ── Section headings ────────────────────────────────────────────────── */
-  .div   {{ border:none; border-top:1px solid rgba(255,255,255,0.15); margin:10px 0; }}
-  .note  {{ font-size:10px; color:#94A3B8; margin-top:6px; }}
-  label  {{ color:rgba(255,255,255,0.85) !important; }}
+  .div  {{ border:none; border-top:1px solid rgba(255,255,255,0.15); margin:10px 0; }}
+  .note {{ font-size:10px; color:#94A3B8; margin-top:6px; }}
+  label {{ color:rgba(255,255,255,0.85) !important; }}
   .stSelectbox > div > div {{ background:{CARD}; border-radius:8px; }}
   .stFileUploader {{ background:{CARD}; border-radius:10px; padding:6px; }}
 
-  /* 22px centered heading for all sections */
   .sec-head {{
       text-align:center; color:#fff;
       font-size:22px; font-weight:800; letter-spacing:0.03em;
@@ -200,10 +185,9 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Header ─────────────────────────────────────────────────────────────────────
 ext_pill = ('<span style="background:#10B981;color:#fff;font-size:9px;font-weight:700;'
             'padding:2px 8px;border-radius:9999px;margin-left:10px;vertical-align:middle">'
-            '✓ Weather &amp; Holiday data loaded</span>') if HAS_EXTERNAL else ""
+            'Weather and Holiday data loaded</span>') if HAS_EXTERNAL else ""
 st.markdown(f"""
 <div style="display:flex;align-items:center;gap:16px;padding:2px 0 12px">
   <img src="{LOGO}" style="width:140px;height:auto;filter:brightness(0) invert(1);">
@@ -212,14 +196,13 @@ st.markdown(f"""
       Sales Demand Forecast{ext_pill}
     </div>
     <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:3px">
-      Upload your sales CSV — feature engineering, external data merging, and forecasting run automatically.
+      Upload your sales CSV - feature engineering, external data merging, and forecasting run automatically.
     </div>
   </div>
 </div>
 <hr class='div'>
 """, unsafe_allow_html=True)
 
-# ── Core helpers ───────────────────────────────────────────────────────────────
 def detect_structure(df):
     cl = {c: c.lower() for c in df.columns}
     product_col = next((c for c,l in cl.items() if l in ("product_id","product","sku","item_id")), None)
@@ -272,11 +255,9 @@ def feature_engineering(df_in):
     df["trend"] = np.arange(len(df))
     if HAS_EXTERNAL:
         wdf = _WEATHER_RAW.rename(columns={"week":"week_of_year"})
-        df  = df.merge(wdf[["year","week_of_year"]+EXT_WEATHER_COLS],
-                       on=["year","week_of_year"], how="left")
+        df  = df.merge(wdf[["year","week_of_year"]+EXT_WEATHER_COLS], on=["year","week_of_year"], how="left")
         hdf = _HOLIDAY_RAW.rename(columns={"week":"week_of_year"})
-        df  = df.merge(hdf[["year","week_of_year"]+EXT_HOLIDAY_COLS],
-                       on=["year","week_of_year"], how="left")
+        df  = df.merge(hdf[["year","week_of_year"]+EXT_HOLIDAY_COLS], on=["year","week_of_year"], how="left")
         for col in EXT_WEATHER_COLS:
             if col in df.columns: df[col] = df[col].fillna(df[col].mean())
         for col in EXT_HOLIDAY_COLS:
@@ -371,19 +352,17 @@ def white_ax(figsize=(9,3)):
     return fig, ax
 
 def badge(pc):
-    if pc >  5: return f"<span class='badge b-up'>▲ +{pc:.1f}%</span>"
-    if pc < -5: return f"<span class='badge b-down'>▼ {pc:.1f}%</span>"
-    return             f"<span class='badge b-flat'>▶ {pc:+.1f}%</span>"
+    if pc >  5: return f"<span class='badge b-up'>+{pc:.1f}%</span>"
+    if pc < -5: return f"<span class='badge b-down'>{pc:.1f}%</span>"
+    return             f"<span class='badge b-flat'>{pc:+.1f}%</span>"
 
 def arrow(pc):
-    if pc >  5: return f"<span style='color:{GREEN};font-weight:800'>▲</span>"
-    if pc < -5: return f"<span style='color:{RED};font-weight:800'>▼</span>"
-    return             f"<span style='color:{AMBER};font-weight:800'>▶</span>"
+    if pc >  5: return f"<span style='color:{GREEN};font-weight:800'>up</span>"
+    if pc < -5: return f"<span style='color:{RED};font-weight:800'>down</span>"
+    return             f"<span style='color:{AMBER};font-weight:800'>flat</span>"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# UPLOAD ROW — equal-width model + sales dropdowns, file box shrunk to match
-# ══════════════════════════════════════════════════════════════════════════════
-uL, uM, uR, uRR = st.columns([1.5, 1.5, 1.5, 1], gap="medium")
+# UPLOAD ROW
+uL, uM, uR, uRR = st.columns([3.5, 1.5, 1.5, 1], gap="medium")
 with uL:
     uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
 with uM:
@@ -401,13 +380,12 @@ with uR:
         )
 with uRR:
     st.markdown("<div style='padding-top:25px'>", unsafe_allow_html=True)
-    run_btn = st.button("Run →", type="primary", disabled=(uploaded is None),
+    run_btn = st.button("Run", type="primary", disabled=(uploaded is None),
                         use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<hr class='div'>", unsafe_allow_html=True)
 
-# ── Session state & run ────────────────────────────────────────────────────────
 if uploaded and run_btn:
     st.session_state.update(rb=uploaded.getvalue(), sc=sales_col_sel,
                              inf=info, mtype=model_type_sel)
@@ -417,7 +395,7 @@ if "rb" in st.session_state and uploaded is not None:
     if st.session_state.get("mtype") != _mt:
         st.session_state["mtype"] = _mt
     feat_note = "time-series + weather + holiday" if HAS_EXTERNAL else "time-series"
-    with st.spinner(f"Running {_mt} on {feat_note} features…"):
+    with st.spinner(f"Running {_mt} on {feat_note} features..."):
         results = run_all(
             st.session_state["rb"], st.session_state["sc"],
             st.session_state["inf"]["date_mode"], st.session_state["inf"]["date_col"],
@@ -427,26 +405,20 @@ if "rb" in st.session_state and uploaded is not None:
         )
     st.session_state["results"] = results
 
-# ══════════════════════════════════════════════════════════════════════════════
-# RESULTS
-# ══════════════════════════════════════════════════════════════════════════════
 if st.session_state.get("results"):
     results = st.session_state["results"]
     if not results:
-        st.error("No products with ≥20 usable records found."); st.stop()
+        st.error("No products with 20 or more usable records found."); st.stop()
 
-    # Aggregate
     smry_rows = []
     for pid, r in results.items():
         f, h  = r["forecast"], r["history"]
         ftot  = f["forecast"].sum(); favg = f["forecast"].mean()
         prev  = h["sales"].iloc[-4:].mean() if len(h)>=4 else h["sales"].mean()
         pct   = (favg-prev)/prev*100 if prev else 0
-        # volatility = historical coeff of variation
-        cv    = h["sales"].std() / h["sales"].mean() * 100 if h["sales"].mean() > 0 else 0
         smry_rows.append(dict(product_id=pid, forecast_total=ftot,
                               forecast_avg=favg, prev_avg=prev, pct_change=pct,
-                              r2=r["r2"], cv=cv))
+                              r2=r["r2"]))
     smry        = pd.DataFrame(smry_rows)
     n_prod      = len(smry)
     total_dem   = smry["forecast_total"].sum()
@@ -459,9 +431,7 @@ if st.session_state.get("results"):
     dn_c = (smry["pct_change"] < -5).sum()
     st_c = n_prod - up_c - dn_c
 
-    # ══════════════════════════════════════════════════════════════════════════
     # SECTION 1 — PRODUCT DETAIL
-    # ══════════════════════════════════════════════════════════════════════════
     st.markdown("<div class='sec-head'>Product Detail</div>", unsafe_allow_html=True)
 
     all_pids = sorted(results.keys(), key=lambda x: str(x))
@@ -478,34 +448,31 @@ if st.session_state.get("results"):
         fc_avg   = fcast["forecast"].mean()
         ov_pct   = (fc_avg - prev_avg) / prev_avg * 100 if prev_avg else 0
 
-        # 4 equal period tiles
         p1, p2, p3, p4 = st.columns(4, gap="medium")
         for col, i in zip([p1,p2,p3,p4], range(4)):
             row      = fcast.iloc[i]
             date_str = pd.to_datetime(row["date"]).strftime("%d %b %Y")
             dp       = (row["forecast"] - prev_avg) / prev_avg * 100 if prev_avg else 0
             tcls     = "b-up" if dp > 5 else ("b-down" if dp < -5 else "b-flat")
-            tsym     = "▲" if dp > 5 else ("▼" if dp < -5 else "▶")
+            tsign    = f"+{dp:.1f}%" if dp > 0 else f"{dp:.1f}%"
             col.markdown(f"""
             <div class='ptile'>
               <div class='ptile-period'>Period {i+1}</div>
               <div class='ptile-date'>{date_str}</div>
               <div class='ptile-num'>{row['forecast']:,.0f}</div>
               <div class='ptile-sub'>units forecasted</div>
-              <span class='badge {tcls}'>{tsym} {dp:+.1f}% vs prev 4</span>
+              <span class='badge {tcls}'>{tsign} vs prev 4</span>
             </div>""", unsafe_allow_html=True)
 
         st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
-        # Large centered title
         st.markdown(f"""
         <div style="text-align:center;margin-bottom:12px">
-          <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:0.02em">
-            Product {sel_pid} — History + Forecast
+          <div style="font-size:22px;font-weight:800;color:#fff;">
+            Product {sel_pid} - History + Forecast
           </div>
         </div>""", unsafe_allow_html=True)
 
-        # Chart (no tile wrapper) + Explainability placeholder
         chart_col, xai_col = st.columns([6, 4], gap="medium")
 
         with chart_col:
@@ -516,7 +483,7 @@ if st.session_state.get("results"):
                      marker="o", markersize=5, label="Forecast", zorder=4)
             ax2.fill_between(fcast["date"],
                              fcast["forecast"]*0.85, fcast["forecast"]*1.15,
-                             color=BLUE, alpha=0.12, label="±15% band")
+                             color=BLUE, alpha=0.12, label="15% band")
             ax2.axvline(hist["date"].iloc[-1], color=BORDER, lw=1.2, linestyle="--")
             ax2.yaxis.grid(True, color=BORDER, zorder=0); ax2.set_axisbelow(True)
             ax2.set_ylabel("Units", color="#64748B", fontsize=9)
@@ -527,7 +494,6 @@ if st.session_state.get("results"):
             st.pyplot(fig2, use_container_width=True)
 
         with xai_col:
-            # Explainability placeholder — content to be added later
             st.markdown(f"""
             <div class='tile' style='min-height:300px'>
               <div style='font-size:18px;font-weight:800;color:{NAVY};
@@ -539,22 +505,16 @@ if st.session_state.get("results"):
 
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 2 — SUMMARY & ANALYSIS
-    # 2×2 grid:
-    #   Row 1: [Overview (Key Numbers) + Prioritisation (Top 5) combined]  |  [Total Demand chart]
-    #   Row 2: [Analysis (Biggest Movers)]                                  |  [Period Trend]
-    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 2 — SUMMARY AND ANALYSIS
     st.markdown("""
-    <div class='sec-head'>Summary &amp; Analysis</div>
-    <div class='sec-sub'>All products · Next 4 forecast periods</div>
+    <div class='sec-head'>Summary and Analysis</div>
+    <div class='sec-sub'>All products - Next 4 forecast periods</div>
     """, unsafe_allow_html=True)
 
-    # ── Row 1 ──────────────────────────────────────────────────────────────
+    # Row 1: Overview+Prioritisation | Total Demand chart
     r1c1, r1c2 = st.columns(2, gap="medium")
 
     with r1c1:
-        # Overview KPIs + Prioritisation (Top 5) combined in one tile
         top5     = smry.nlargest(5,"forecast_total").reset_index(drop=True)
         rows_top = "".join(f"""
           <tr>
@@ -583,16 +543,16 @@ if st.session_state.get("results"):
           </div>
           <div class='kpi-row' style='margin-top:10px'>
             <div class='kpi-cell'>
-              <span class='badge b-up'>▲ {up_c}</span>
-              <div class='kpi-sub' style='margin-top:4px'>Trending up (&gt;5%)</div>
+              <span class='badge b-up'>{up_c} up</span>
+              <div class='kpi-sub' style='margin-top:4px'>Trending up</div>
             </div>
             <div class='kpi-cell'>
-              <span class='badge b-flat'>▶ {st_c}</span>
-              <div class='kpi-sub' style='margin-top:4px'>Stable (±5%)</div>
+              <span class='badge b-flat'>{st_c} flat</span>
+              <div class='kpi-sub' style='margin-top:4px'>Stable</div>
             </div>
             <div class='kpi-cell'>
-              <span class='badge b-down'>▼ {dn_c}</span>
-              <div class='kpi-sub' style='margin-top:4px'>Trending down (&gt;5%)</div>
+              <span class='badge b-down'>{dn_c} down</span>
+              <div class='kpi-sub' style='margin-top:4px'>Trending down</div>
             </div>
           </div>
           <hr class='tile-divider'>
@@ -602,14 +562,13 @@ if st.session_state.get("results"):
             <tr><th>#</th><th>Product</th><th>Total forecast</th><th>Trend</th></tr>
             {rows_top}
           </table>
-          <p class='note'>Total units across all 4 periods. Use to prioritise production capacity.</p>
+          <p class='note'>Total units across all 4 periods.</p>
         </div>""", unsafe_allow_html=True)
 
     with r1c2:
-        # Total Demand bar chart — chart height matches the combined left tile
         st.markdown(f"""<div class='tile'>
           <div class='tile-label'>Forecast</div>
-          <div class='tile-title'>Total Demand — Next 4 Periods</div>""",
+          <div class='tile-title'>Total Demand - Next 4 Periods</div>""",
           unsafe_allow_html=True)
         fig, ax = white_ax((7, 3.1))
         plabels = ["Period 1","Period 2","Period 3","Period 4"]
@@ -627,11 +586,10 @@ if st.session_state.get("results"):
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # ── Row 2 ──────────────────────────────────────────────────────────────
+    # Row 2: Biggest Movers | Period Trend
     r2c1, r2c2 = st.columns(2, gap="medium")
 
     with r2c1:
-        # Analysis — Biggest Movers
         movers  = pd.concat([smry.nlargest(5,"pct_change"),
                               smry.nsmallest(5,"pct_change")]) \
                     .drop_duplicates("product_id").sort_values("pct_change", ascending=False)
@@ -654,21 +612,14 @@ if st.session_state.get("results"):
         </div>""", unsafe_allow_html=True)
 
     with r2c2:
-        # New metric — Period-by-Period Demand Trend
-        p_changes = []
-        for i, v in enumerate(period_tots):
-            if i == 0:
-                p_changes.append(None)
-            else:
-                prev_v = period_tots[i-1]
-                p_changes.append((v - prev_v) / prev_v * 100 if prev_v else 0)
-
+        p_changes = [None] + [
+            (period_tots[i] - period_tots[i-1]) / period_tots[i-1] * 100
+            for i in range(1, 4)
+        ]
         rows_pt = ""
         for i, (v, ch) in enumerate(zip(period_tots, p_changes)):
-            if ch is None:
-                chg_html = "<span style='color:#94A3B8;font-size:10px'>baseline</span>"
-            else:
-                chg_html = badge(ch)
+            chg_html = ("<span style='color:#94A3B8;font-size:10px'>baseline</span>"
+                        if ch is None else badge(ch))
             rows_pt += f"""
           <tr>
             <td><b>Period {i+1}</b></td>
@@ -676,20 +627,20 @@ if st.session_state.get("results"):
             <td>{chg_html}</td>
           </tr>"""
 
-        # Overall trajectory
         p1v, p4v = period_tots[0], period_tots[3]
         traj_pct = (p4v - p1v) / p1v * 100 if p1v else 0
         traj_lbl = "Growing" if traj_pct > 2 else ("Declining" if traj_pct < -2 else "Flat")
         traj_cls = "b-up" if traj_pct > 2 else ("b-down" if traj_pct < -2 else "b-flat")
-        traj_sym = "▲" if traj_pct > 2 else ("▼" if traj_pct < -2 else "▶")
+        tsign    = f"+{traj_pct:.1f}%" if traj_pct > 0 else f"{traj_pct:.1f}%"
 
+        # min-height set to match Biggest Movers tile (10 rows ~ 420px)
         st.markdown(f"""
         <div class='tile' style='min-height:420px'>
           <div class='tile-label'>Demand Trajectory</div>
           <div class='tile-title'>Period-by-Period Trend</div>
           <div style='margin-bottom:12px'>
             <span class='badge {traj_cls}' style='font-size:11px;padding:4px 12px'>
-              {traj_sym} {traj_lbl} &nbsp; P1→P4: {traj_pct:+.1f}%
+              {traj_lbl} &nbsp; P1 to P4: {tsign}
             </span>
           </div>
           <table class='tbl'>
@@ -699,10 +650,8 @@ if st.session_state.get("results"):
           <p class='note'>Compares each forecast period to the previous one across all products.</p>
         </div>""", unsafe_allow_html=True)
 
-
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
-    # ── Download ───────────────────────────────────────────────────────────────
     dl = smry[["product_id","forecast_total","forecast_avg","prev_avg","pct_change"]].copy()
     dl.columns = ["Product ID","Total Forecast (4 periods)","Avg per Period",
                   "Prev 4 Period Avg","% Change"]
