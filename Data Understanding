@@ -72,7 +72,7 @@ known to cause significant challenges for standard forecasting models
 \node[mybox] (agg)    at (7.6,0)  {\textbf{Weekly Aggregation}\\ week\_start as time key};
 \node[mybox] (merge)  at (7.6,-2.5) {\textbf{Merge External Data}\\ KNMI, holidays, school};
 \node[mybox] (filter) at (3.8,-2.5) {\textbf{Filter Products}\\ Min. 52 weeks history};
-\node[mybox] (final)  at (0,-2.5) {\textbf{Final Dataset}\\ 114 products, 12,667 records};
+\node[mybox] (final)  at (0,-2.5) {\textbf{Final Dataset}\\ 114 products, 13,579 records};
 
 \draw[arrow] (raw)    -- (dedup);
 \draw[arrow] (dedup)  -- (agg);
