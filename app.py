@@ -51,17 +51,16 @@ FCOLS_BASE = [
 ]
 FCOLS = FCOLS_BASE + EXT_COLS
 
-# Human-readable labels for XAI panel
 FEAT_LABELS = {
-    "lag_1":"Last period sales", "lag_2":"Sales 2 periods ago",
-    "lag_4":"Sales 4 periods ago", "lag_8":"Sales 8 periods ago",
-    "rolling_mean_4":"4-period avg", "rolling_mean_8":"8-period avg",
-    "rolling_std_4":"4-period volatility", "rolling_std_8":"8-period volatility",
-    "trend":"Long-term trend", "month":"Month of year",
-    "week_of_year":"Week of year", "quarter":"Quarter",
-    "is_month_start":"Month start", "is_month_end":"Month end",
-    "month_sin":"Seasonality (month)", "month_cos":"Seasonality (month)",
-    "week_sin":"Seasonality (week)",  "week_cos":"Seasonality (week)",
+    "lag_1":"Last period sales","lag_2":"Sales 2 periods ago",
+    "lag_4":"Sales 4 periods ago","lag_8":"Sales 8 periods ago",
+    "rolling_mean_4":"4-period avg","rolling_mean_8":"8-period avg",
+    "rolling_std_4":"4-period volatility","rolling_std_8":"8-period volatility",
+    "trend":"Long-term trend","month":"Month of year",
+    "week_of_year":"Week of year","quarter":"Quarter",
+    "is_month_start":"Month start","is_month_end":"Month end",
+    "month_sin":"Seasonality (month)","month_cos":"Seasonality (month)",
+    "week_sin":"Seasonality (week)","week_cos":"Seasonality (week)",
     "temp_mean":"Avg temperature","temp_min":"Min temperature",
     "temp_max":"Max temperature","precip_sum":"Precipitation",
     "sunshine_sum":"Sunshine hours","temp_anomaly":"Temp anomaly",
@@ -85,23 +84,23 @@ st.markdown(f"""
       border-radius:8px!important; padding:0.45rem 1.2rem!important;
       font-weight:600!important; font-size:13px!important; width:100%;
   }}
-  .stButton>button:hover {{ background:#1D4ED8!important; }}
+  .stButton>button:hover  {{ background:#1D4ED8!important; }}
   .stButton>button:disabled {{ background:#4B6A9B!important; opacity:0.6!important; }}
 
-  /* Base tile */
+  /* White card tile */
   .tile {{
       background:{CARD}; border-radius:12px;
-      padding:16px 20px; border:1px solid {BORDER}; height:100%;
+      padding:18px 22px; border:1px solid {BORDER}; height:100%;
   }}
   .tile-label {{
       font-size:9px; font-weight:700; letter-spacing:.12em;
-      text-transform:uppercase; color:#94A3B8; margin-bottom:1px;
+      text-transform:uppercase; color:#94A3B8; margin-bottom:2px;
   }}
   .tile-title {{
       font-size:14px; font-weight:700; color:{NAVY}; margin-bottom:10px;
   }}
 
-  /* KPI row inside a tile */
+  /* KPI rows */
   .kpi-row {{ display:flex; gap:0; }}
   .kpi-cell {{
       flex:1; padding-right:14px; margin-right:14px;
@@ -111,48 +110,55 @@ st.markdown(f"""
   .kpi-num {{ font-size:30px; font-weight:800; color:{NAVY}; line-height:1; }}
   .kpi-sub {{ font-size:10px; color:#64748B; margin-top:3px; }}
 
-  /* Period mini-tiles */
+  /* Period tiles — equal height/style */
   .ptile {{
-      background:{CARD}; border-radius:10px; border:1px solid {BORDER};
-      padding:14px 12px; text-align:center;
+      background:{CARD}; border-radius:12px; border:1px solid {BORDER};
+      padding:18px 14px; text-align:center; height:100%;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
   }}
-  .ptile-period {{ font-size:9px; font-weight:700; letter-spacing:.1em;
-      text-transform:uppercase; color:#94A3B8; }}
-  .ptile-date {{ font-size:10px; color:#64748B; margin:3px 0 6px; }}
-  .ptile-num {{ font-size:26px; font-weight:800; color:{NAVY}; line-height:1; }}
-  .ptile-sub {{ font-size:10px; color:#64748B; margin-top:2px; }}
+  .ptile-period {{ font-size:9px; font-weight:700; letter-spacing:.12em;
+      text-transform:uppercase; color:#94A3B8; margin-bottom:4px; }}
+  .ptile-date   {{ font-size:11px; color:#64748B; margin-bottom:8px; }}
+  .ptile-num    {{ font-size:32px; font-weight:800; color:{NAVY}; line-height:1; }}
+  .ptile-sub    {{ font-size:10px; color:#64748B; margin-top:4px; margin-bottom:8px; }}
 
   /* Badges */
-  .badge {{ display:inline-block; padding:2px 7px; border-radius:9999px;
-      font-size:10px; font-weight:700; }}
+  .badge {{ display:inline-block; padding:3px 9px; border-radius:9999px;
+            font-size:10px; font-weight:700; }}
   .b-up   {{ background:#D1FAE5; color:#065F46; }}
   .b-down {{ background:#FEE2E2; color:#991B1B; }}
   .b-flat {{ background:#FEF3C7; color:#78350F; }}
 
   /* Tables */
   .tbl {{ width:100%; border-collapse:collapse; font-size:11px; }}
-  .tbl th {{ padding:6px 9px; background:{NAVY}; color:#fff;
-      font-weight:600; text-align:left; font-size:10px; }}
-  .tbl td {{ padding:5px 9px; border-bottom:1px solid {BORDER}; color:#374151; }}
+  .tbl th {{ padding:7px 10px; background:{NAVY}; color:#fff;
+             font-weight:600; text-align:left; font-size:10px; }}
+  .tbl td {{ padding:6px 10px; border-bottom:1px solid {BORDER}; color:#374151; }}
   .tbl tr:last-child td {{ border-bottom:none; }}
 
-  /* XAI driver list */
-  .drv {{ display:flex; align-items:center; gap:8px; margin-bottom:6px; }}
-  .drv-bar-wrap {{ flex:1; background:#F1F5F9; border-radius:4px; height:8px; overflow:hidden; }}
-  .drv-bar {{ height:8px; border-radius:4px; }}
-  .drv-label {{ font-size:11px; color:#374151; width:150px; white-space:nowrap;
-      overflow:hidden; text-overflow:ellipsis; }}
-  .drv-val {{ font-size:10px; font-weight:700; width:38px; text-align:right; }}
-
-  /* Misc */
+  /* Section dividers */
   .div {{ border:none; border-top:1px solid rgba(255,255,255,0.15); margin:10px 0; }}
   .note {{ font-size:10px; color:#94A3B8; margin-top:6px; }}
+
+  /* Selectbox / file uploader */
   label {{ color:rgba(255,255,255,0.85) !important; }}
   .stSelectbox > div > div {{ background:{CARD}; border-radius:8px; }}
   .stFileUploader {{ background:{CARD}; border-radius:10px; padding:8px; }}
+
+  /* Section heading — now centered and larger */
   .sec-head {{
-      color:rgba(255,255,255,0.88); font-size:11px; font-weight:700;
-      letter-spacing:.1em; text-transform:uppercase; margin:8px 0 7px;
+      text-align:center;
+      color:#fff;
+      font-size:20px;
+      font-weight:800;
+      letter-spacing:0.04em;
+      margin:18px 0 4px;
+  }}
+  .sec-sub {{
+      text-align:center;
+      color:rgba(255,255,255,0.5);
+      font-size:11px;
+      margin-bottom:14px;
   }}
 </style>
 """, unsafe_allow_html=True)
@@ -168,7 +174,7 @@ st.markdown(f"""
     <div style="font-size:22px;font-weight:800;color:#fff;line-height:1.1">
       Sales Demand Forecast{ext_pill}
     </div>
-    <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:3px">
+    <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:3px">
       Upload your sales CSV — feature engineering, external data merging, and forecasting run automatically.
     </div>
   </div>
@@ -253,10 +259,9 @@ def _ext_for_date(nd):
     return r
 
 def get_feature_importance(model, fcols):
-    """Return list of (feature, coefficient) sorted by |coef| descending."""
-    support  = model.named_steps["var"].get_support()
-    kept     = [f for f, s in zip(fcols, support) if s]
-    coef     = model.named_steps["reg"].coef_
+    support = model.named_steps["var"].get_support()
+    kept    = [f for f, s in zip(fcols, support) if s]
+    coef    = model.named_steps["reg"].coef_
     return sorted([(f, float(c)) for f, c in zip(kept, coef)],
                   key=lambda x: abs(x[1]), reverse=True)
 
@@ -323,7 +328,6 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
         }
     return out
 
-# ── Chart helper ───────────────────────────────────────────────────────────────
 def white_ax(figsize=(9,3)):
     fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor(CARD); ax.set_facecolor(CARD)
@@ -342,9 +346,10 @@ def arrow(pc):
     return             f"<span style='color:{AMBER};font-weight:800'>▶</span>"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# UPLOAD ROW — model dropdown FIRST, then sales column
+# UPLOAD ROW — equal-width model + sales column dropdowns, centered between
+#              file upload and run button
 # ══════════════════════════════════════════════════════════════════════════════
-uL, uM, uR, uRR = st.columns([3.5, 1.4, 1.6, 0.9], gap="medium")
+uL, uM, uR, uRR = st.columns([3.5, 1.5, 1.5, 1], gap="medium")
 with uL:
     uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
 with uM:
@@ -366,12 +371,7 @@ with uRR:
                         use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-if uploaded and info.get("date_mode") == "split":
-    st.markdown(
-        f"<p style='color:rgba(255,255,255,0.55);font-size:10px;margin-top:-4px'>"
-        f"Split date: <b style='color:#fff'>{info['year_col']} / {info['month_col']} "
-        f"/ {info['day_col']}</b> — combined automatically.</p>",
-        unsafe_allow_html=True)
+# NOTE: split-date notice intentionally removed
 
 st.markdown("<hr class='div'>", unsafe_allow_html=True)
 
@@ -385,7 +385,7 @@ if "rb" in st.session_state and uploaded is not None:
     if st.session_state.get("mtype") != _mt:
         st.session_state["mtype"] = _mt
     feat_note = "time-series + weather + holiday" if HAS_EXTERNAL else "time-series"
-    with st.spinner(f"Running {_mt} regression on {feat_note} features…"):
+    with st.spinner(f"Running {_mt} on {feat_note} features…"):
         results = run_all(
             st.session_state["rb"], st.session_state["sc"],
             st.session_state["inf"]["date_mode"], st.session_state["inf"]["date_col"],
@@ -404,15 +404,15 @@ if st.session_state.get("results"):
         st.error("No products with ≥20 usable records found."); st.stop()
 
     # Aggregate summary
-    rows = []
+    smry_rows = []
     for pid, r in results.items():
         f, h  = r["forecast"], r["history"]
         ftot  = f["forecast"].sum(); favg = f["forecast"].mean()
         prev  = h["sales"].iloc[-4:].mean() if len(h)>=4 else h["sales"].mean()
         pct   = (favg-prev)/prev*100 if prev else 0
-        rows.append(dict(product_id=pid, forecast_total=ftot,
-                         forecast_avg=favg, prev_avg=prev, pct_change=pct))
-    smry        = pd.DataFrame(rows)
+        smry_rows.append(dict(product_id=pid, forecast_total=ftot,
+                              forecast_avg=favg, prev_avg=prev, pct_change=pct))
+    smry        = pd.DataFrame(smry_rows)
     n_prod      = len(smry)
     total_dem   = smry["forecast_total"].sum()
     avg_prod    = smry["forecast_avg"].mean()
@@ -423,7 +423,7 @@ if st.session_state.get("results"):
     st_c = n_prod - up_c - dn_c
 
     # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 1 — Product Detail (TOP)
+    # SECTION 1 — PRODUCT DETAIL
     # ══════════════════════════════════════════════════════════════════════════
     st.markdown("<div class='sec-head'>Product Detail</div>", unsafe_allow_html=True)
 
@@ -435,16 +435,15 @@ if st.session_state.get("results"):
         pr       = results[sel_pid]
         hist     = pr["history"]
         fcast    = pr["forecast"]
-        imp      = pr["importance"]      # [(feat, coef), ...]
+        imp      = pr["importance"]
         r2_val   = pr["r2"]
         prev_avg = hist["sales"].iloc[-4:].mean() if len(hist)>=4 else hist["sales"].mean()
         fc_avg   = fcast["forecast"].mean()
         ov_pct   = (fc_avg - prev_avg) / prev_avg * 100 if prev_avg else 0
-        n_feats  = len([c for c in FCOLS if c in hist.columns])
 
-        # ── 4 compact period tiles ─────────────────────────────────────────
-        d1, d2, d3, d4 = st.columns(4, gap="small")
-        for col, i in zip([d1,d2,d3,d4], range(4)):
+        # ── 4 equal period tiles ───────────────────────────────────────────
+        p1, p2, p3, p4 = st.columns(4, gap="medium")
+        for col, i in zip([p1,p2,p3,p4], range(4)):
             row      = fcast.iloc[i]
             date_str = pd.to_datetime(row["date"]).strftime("%d %b %Y")
             dp       = (row["forecast"] - prev_avg) / prev_avg * 100 if prev_avg else 0
@@ -456,23 +455,25 @@ if st.session_state.get("results"):
               <div class='ptile-date'>{date_str}</div>
               <div class='ptile-num'>{row['forecast']:,.0f}</div>
               <div class='ptile-sub'>units forecasted</div>
-              <div style='margin-top:6px'>
-                <span class='badge {tcls}'>{tsym} {dp:+.1f}% vs prev 4</span>
-              </div>
+              <span class='badge {tcls}'>{tsym} {dp:+.1f}% vs prev 4</span>
             </div>""", unsafe_allow_html=True)
 
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
-        # ── Chart (left) + XAI panel (right) ──────────────────────────────
+        # ── Large centered title ───────────────────────────────────────────
+        st.markdown(f"""
+        <div style="text-align:center;margin-bottom:12px">
+          <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:0.02em">
+            Product {sel_pid} — History + Forecast
+          </div>
+        </div>""", unsafe_allow_html=True)
+
+        # ── Chart (left, no tile wrapper) + Explainability placeholder (right) ──
         chart_col, xai_col = st.columns([6, 4], gap="medium")
 
         with chart_col:
-            st.markdown("<div class='tile'>", unsafe_allow_html=True)
-            st.markdown(
-                f"<div class='tile-label'>Product {sel_pid} — History + Forecast</div>"
-                f"<div class='tile-title'>Last 52 Periods + Next 4 (±15% band)</div>",
-                unsafe_allow_html=True)
-            fig2, ax2 = white_ax((8, 3.2))
+            # Chart rendered directly — no outer tile, chart's own white background shows
+            fig2, ax2 = white_ax((9, 3.8))
             tail = hist.tail(52)
             ax2.plot(tail["date"], tail["sales"], color=NAVY, lw=1.8, label="Historical", zorder=3)
             ax2.plot(fcast["date"], fcast["forecast"], color=BLUE, lw=2.2,
@@ -486,84 +487,33 @@ if st.session_state.get("results"):
             ax2.legend(facecolor=CARD, edgecolor=BORDER, fontsize=8)
             ax2.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
             fig2.autofmt_xdate()
-            plt.tight_layout(pad=0.3)
+            plt.tight_layout(pad=0.4)
             st.pyplot(fig2, use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
 
         with xai_col:
-            # ── Model info strip ──────────────────────────────────────────
-            r2_color = GREEN if r2_val >= 0.7 else (AMBER if r2_val >= 0.4 else RED)
-            r2_label = "Good fit" if r2_val >= 0.7 else ("Moderate" if r2_val >= 0.4 else "Weak fit")
-            mt_used  = st.session_state.get("mtype","Ridge")
-
+            # Explainability placeholder — subtitle only, content to be added later
             st.markdown(f"""
-            <div class='tile' style='margin-bottom:8px'>
-              <div class='tile-label'>Explainability (XAI)</div>
-              <div class='tile-title'>Forecast Drivers — Product {sel_pid}</div>
-
-              <div style='display:flex;gap:10px;margin-bottom:12px'>
-                <div style='flex:1;background:#F8FAFC;border-radius:8px;padding:10px 12px;
-                            border:1px solid {BORDER};text-align:center'>
-                  <div style='font-size:9px;font-weight:700;letter-spacing:.1em;
-                              text-transform:uppercase;color:#94A3B8;margin-bottom:3px'>Model</div>
-                  <div style='font-size:16px;font-weight:800;color:{NAVY}'>{mt_used}</div>
-                  <div style='font-size:10px;color:#64748B'>{n_feats} features</div>
-                </div>
-                <div style='flex:1;background:#F8FAFC;border-radius:8px;padding:10px 12px;
-                            border:1px solid {BORDER};text-align:center'>
-                  <div style='font-size:9px;font-weight:700;letter-spacing:.1em;
-                              text-transform:uppercase;color:#94A3B8;margin-bottom:3px'>In-sample R²</div>
-                  <div style='font-size:16px;font-weight:800;color:{r2_color}'>{r2_val:.2f}</div>
-                  <div style='font-size:10px;color:#64748B'>{r2_label}</div>
-                </div>
-                <div style='flex:1;background:#F8FAFC;border-radius:8px;padding:10px 12px;
-                            border:1px solid {BORDER};text-align:center'>
-                  <div style='font-size:9px;font-weight:700;letter-spacing:.1em;
-                              text-transform:uppercase;color:#94A3B8;margin-bottom:3px'>Avg Forecast</div>
-                  <div style='font-size:16px;font-weight:800;color:{NAVY}'>{fc_avg:,.0f}</div>
-                  <div style='font-size:10px;color:#64748B'>{badge(ov_pct)}</div>
-                </div>
+            <div class='tile' style='height:100%;min-height:300px'>
+              <div style='font-size:18px;font-weight:800;color:{NAVY};
+                          border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:10px'>
+                Explainability
               </div>
-
-              <div style='font-size:10px;font-weight:700;color:{NAVY};margin-bottom:6px;
-                          border-bottom:1px solid {BORDER};padding-bottom:4px'>
-                Top Feature Contributions (scaled coefficients)
-              </div>
-            """, unsafe_allow_html=True)
-
-            # Horizontal bar chart of top 10 features
-            top_imp = imp[:10]
-            max_abs = max(abs(c) for _, c in top_imp) if top_imp else 1
-            for feat_name, coef in top_imp:
-                label   = FEAT_LABELS.get(feat_name, feat_name)
-                pct_bar = abs(coef) / max_abs * 100
-                color   = "#10B981" if coef > 0 else "#EF4444"
-                sign    = "+" if coef > 0 else ""
-                st.markdown(f"""
-                <div class='drv'>
-                  <div class='drv-label' title='{label}'>{label}</div>
-                  <div class='drv-bar-wrap'>
-                    <div class='drv-bar' style='width:{pct_bar:.0f}%;background:{color}'></div>
-                  </div>
-                  <div class='drv-val' style='color:{color}'>{sign}{coef:.1f}</div>
-                </div>""", unsafe_allow_html=True)
-
-            st.markdown("""
-              <p class='note' style='margin-top:8px'>
-                Green = pushes forecast <b>up</b> &nbsp;|&nbsp; Red = pushes forecast <b>down</b><br>
-                Bar width = relative magnitude of the coefficient.
-              </p>
             </div>""", unsafe_allow_html=True)
 
-    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 2 — Summary KPIs + Period Bar Chart
+    # SECTION 2 — SUMMARY & ANALYSIS (4 tiles in 2×2 grid)
     # ══════════════════════════════════════════════════════════════════════════
-    st.markdown("<div class='sec-head'>Summary</div>", unsafe_allow_html=True)
-    c1, c2 = st.columns([1, 1], gap="medium")
+    st.markdown("""
+    <div class='sec-head'>Summary &amp; Analysis</div>
+    <div class='sec-sub'>All products · Next 4 forecast periods</div>
+    """, unsafe_allow_html=True)
 
-    with c1:
+    # Row 1
+    r1c1, r1c2 = st.columns(2, gap="medium")
+
+    with r1c1:
         st.markdown(f"""
         <div class='tile'>
           <div class='tile-label'>Overview</div>
@@ -582,28 +532,29 @@ if st.session_state.get("results"):
               <div class='kpi-sub'>Avg / product / period</div>
             </div>
           </div>
-          <hr style='border:none;border-top:1px solid {BORDER};margin:10px 0 9px'>
+          <hr style='border:none;border-top:1px solid {BORDER};margin:12px 0 10px'>
           <div class='kpi-row'>
             <div class='kpi-cell'>
               <span class='badge b-up'>▲ {up_c}</span>
-              <div class='kpi-sub' style='margin-top:3px'>Trending up (&gt;5%)</div>
+              <div class='kpi-sub' style='margin-top:4px'>Trending up (&gt;5%)</div>
             </div>
             <div class='kpi-cell'>
               <span class='badge b-flat'>▶ {st_c}</span>
-              <div class='kpi-sub' style='margin-top:3px'>Stable (±5%)</div>
+              <div class='kpi-sub' style='margin-top:4px'>Stable (±5%)</div>
             </div>
             <div class='kpi-cell'>
               <span class='badge b-down'>▼ {dn_c}</span>
-              <div class='kpi-sub' style='margin-top:3px'>Trending down (&gt;5%)</div>
+              <div class='kpi-sub' style='margin-top:4px'>Trending down (&gt;5%)</div>
             </div>
           </div>
         </div>""", unsafe_allow_html=True)
 
-    with c2:
-        st.markdown(f"<div class='tile'><div class='tile-label'>Forecast</div>"
-                    f"<div class='tile-title'>Total Demand — Next 4 Periods</div>",
-                    unsafe_allow_html=True)
-        fig, ax = white_ax((8, 2.9))
+    with r1c2:
+        st.markdown(f"""<div class='tile'>
+          <div class='tile-label'>Forecast</div>
+          <div class='tile-title'>Total Demand — Next 4 Periods</div>""",
+          unsafe_allow_html=True)
+        fig, ax = white_ax((7, 2.85))
         plabels = ["Period 1","Period 2","Period 3","Period 4"]
         bars = ax.bar(plabels, period_tots, color=BLUE, width=0.45, zorder=3)
         ax.yaxis.grid(True, color=BORDER, zorder=0); ax.set_axisbelow(True)
@@ -617,15 +568,12 @@ if st.session_state.get("results"):
         st.pyplot(fig, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 3 — Biggest Movers + Top 5 by Volume
-    # ══════════════════════════════════════════════════════════════════════════
-    st.markdown("<div class='sec-head'>Analysis</div>", unsafe_allow_html=True)
-    c3, c4 = st.columns([1, 1], gap="medium")
+    # Row 2
+    r2c1, r2c2 = st.columns(2, gap="medium")
 
-    with c3:
+    with r2c1:
         movers  = pd.concat([smry.nlargest(5,"pct_change"),
                               smry.nsmallest(5,"pct_change")]) \
                     .drop_duplicates("product_id").sort_values("pct_change", ascending=False)
@@ -647,7 +595,7 @@ if st.session_state.get("results"):
           <p class='note'>Top 5 rising + top 5 falling vs last 4 actual periods.</p>
         </div>""", unsafe_allow_html=True)
 
-    with c4:
+    with r2c2:
         top5    = smry.nlargest(5,"forecast_total").reset_index(drop=True)
         rows_h2 = "".join(f"""
           <tr>
@@ -667,7 +615,7 @@ if st.session_state.get("results"):
           <p class='note'>Total units across all 4 periods. Use to prioritise production capacity.</p>
         </div>""", unsafe_allow_html=True)
 
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
     # ── Download ───────────────────────────────────────────────────────────────
     dl = smry[["product_id","forecast_total","forecast_avg","prev_avg","pct_change"]].copy()
