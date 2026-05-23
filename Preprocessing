@@ -1,0 +1,221 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": ["# Sales Data Preprocessing\n", "Pipeline: load → QC → dedup → feature extraction → weekly aggregation → product filter → export"]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import warnings\n",
+    "warnings.filterwarnings('ignore')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": ["## 1. Load"]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df = pd.read_csv(\"sales_history.csv\")\n",
+    "\n",
+    "print(\"Shape:\", df.shape)\n",
+    "print(\"\\nColumn types:\\n\", df.dtypes)\n",
+    "print(\"\\nFirst 5 rows:\\n\", df.head())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": ["## 2. Date Parsing"]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['date'] = pd.to_datetime(df[['year', 'month', 'day']])\n",
+    "\n",
+    "print(\"Date range:\", df['date'].min(), \"→\", df['date'].max())\n",
+    "print(\"Total days spanned:\", (df['date'].max() - df['date'].min()).days)\n",
+    "print(\"Unique products:\", df['product_id'].nunique())\n",
+    "print(\"Total records:\", len(df))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": ["## 3. Quality Check"]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"Missing values:\\n\", df.isnull().sum())\n",
+    "print(\"\\nZero sales records:\", (df['sku_sold'] == 0).sum())\n",
+    "print(\"Zero sales %:\", round((df['sku_sold'] == 0).mean() * 100, 2), \"%\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": ["## 4. Deduplication"]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "dupes = df.duplicated(subset=['product_id', 'year', 'month', 'day'], keep=False)\n",
+    "print(\"Duplicate records:\", dupes.sum())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_clean = (\n",
+    "    df.groupby(['product_id', 'date'], as_index=False)['sku_sold']\n",
+    "    .sum()\n",
+    ")\n",
+    "\n",
+    "print(\"Records before:\", len(df))\n",
+    "print(\"Records after dedup:\", len(df_clean))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": ["## 5. Date Feature Extraction"]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_clean['year']         = df_clean['date'].dt.year\n",
+    "df_clean['month']        = df_clean['date'].dt.month\n",
+    "df_clean['day']          = df_clean['date'].dt.day\n",
+    "df_clean['day_of_week']  = df_clean['date'].dt.dayofweek   # 0=Mon, 6=Sun\n",
+    "df_clean['week_of_year'] = df_clean['date'].dt.isocalendar().week.astype(int)\n",
+    "df_clean['quarter']      = df_clean['date'].dt.quarter\n",
+    "df_clean['is_weekend']   = df_clean['day_of_week'].isin([5, 6]).astype(int)\n",
+    "\n",
+    "print(df_clean[['date','year','month','day','day_of_week','week_of_year','quarter','is_weekend']].head(10))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": ["## 6. Weekly Aggregation"]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "weekly = (\n",
+    "    df_clean.groupby(\n",
+    "        ['product_id', pd.Grouper(key='date', freq='W-MON')],\n",
+    "        as_index=False\n",
+    "    )['sku_sold'].sum()\n",
+    "    .rename(columns={'date': 'week_start'})\n",
+    ")\n",
+    "\n",
+    "print(\"Weekly table shape:\", weekly.shape)\n",
+    "print(weekly.head(10))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": ["## 7. Product Filter (≥52 weeks)"]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "records_per_product = weekly.groupby('product_id').size()\n",
+    "\n",
+    "print(\"Records per product (weekly):\")\n",
+    "print(records_per_product.describe())\n",
+    "print()\n",
+    "print(\"Products with <  52 weekly records:\", (records_per_product < 52).sum())\n",
+    "print(\"Products with >= 52 weekly records:\", (records_per_product >= 52).sum())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "valid_products = records_per_product[records_per_product >= 52].index\n",
+    "df_model = weekly[weekly['product_id'].isin(valid_products)].copy()\n",
+    "\n",
+    "print(\"Products retained for modeling:\", len(valid_products))\n",
+    "print(\"Weekly records retained:\", len(df_model))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": ["## 8. Export"]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Daily (deduplicated)\n",
+    "df_clean.to_csv(\"sales_preprocessed_daily.csv\", index=False)\n",
+    "\n",
+    "# Weekly (all products)\n",
+    "weekly.to_csv(\"sales_preprocessed_weekly.csv\", index=False)\n",
+    "\n",
+    "# Weekly (modeling set, ≥52 weeks)\n",
+    "df_model.to_csv(\"sales_preprocessed_weekly_model.csv\", index=False)\n",
+    "\n",
+    "print(\"Saved 3 files.\")\n",
+    "print(\"  sales_preprocessed_daily.csv         →\", len(df_clean), \"rows\")\n",
+    "print(\"  sales_preprocessed_weekly.csv        →\", len(weekly), \"rows\")\n",
+    "print(\"  sales_preprocessed_weekly_model.csv  →\", len(df_model), \"rows\")"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python",
+   "version": "3.9.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
