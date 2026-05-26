@@ -12,6 +12,9 @@ from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import plotly.graph_objects as go
+from xgboost import XGBRegressor
+import shap
+from interpret.glassbox import ExplainableBoostingRegressor
 warnings.filterwarnings("ignore")
 
 LOGO   = "https://planwisely.ai/wp-content/uploads/2024/08/Planwisely01_1765553.png"
@@ -313,13 +316,42 @@ def _ext_for_date(nd):
 def get_feature_importance(model, fcols):
     support = model.named_steps["var"].get_support()
     kept    = [f for f, s in zip(fcols, support) if s]
-    coef    = model.named_steps["reg"].coef_
+    reg     = model.named_steps["reg"]
+    if isinstance(reg, XGBRegressor):
+        scores = reg.get_booster().get_score(importance_type="gain")
+        result = [(f, scores.get(f"f{i}", 0.0)) for i, f in enumerate(kept)]
+        return sorted(result, key=lambda x: abs(x[1]), reverse=True)
+    if isinstance(reg, ExplainableBoostingRegressor):
+        data   = reg.explain_global().data()
+        # With set_output("pandas"), EBM uses real feature names directly
+        names  = data["names"]
+        scores = [float(s) for s in data["scores"]]
+        return sorted(zip(names, scores), key=lambda x: abs(x[1]), reverse=True)
+    coef = reg.coef_
     return sorted([(f, float(c)) for f, c in zip(kept, coef)],
                   key=lambda x: abs(x[1]), reverse=True)
 
 def train_model(df, model_type="Ridge"):
     fcols = [c for c in FCOLS if c in df.columns]
-    reg   = Lasso(alpha=1.0, max_iter=10000) if model_type == "Lasso" else Ridge(alpha=10.0)
+    if model_type == "Lasso":
+        reg = Lasso(alpha=1.0, max_iter=10000)
+    elif model_type == "XGBoost":
+        reg = XGBRegressor(n_estimators=300, learning_rate=0.05, max_depth=4,
+                           subsample=0.8, colsample_bytree=0.8, random_state=42,
+                           verbosity=0)
+    elif model_type == "EBM":
+        # EBM is a tree-based method — no StandardScaler needed.
+        # set_output("pandas") ensures VarianceThreshold passes a named DataFrame
+        # so EBM picks up real feature names in explain_global().
+        var = VarianceThreshold(threshold=0.0).set_output(transform="pandas")
+        reg = ExplainableBoostingRegressor(random_state=42, n_jobs=-1,
+                                           max_bins=128, interactions=5,
+                                           max_rounds=500, learning_rate=0.05)
+        model = Pipeline([("var", var), ("reg", reg)])
+        model.fit(df[fcols], df["sales"])
+        return model, fcols
+    else:
+        reg = Ridge(alpha=10.0)
     model = Pipeline([
         ("var",    VarianceThreshold(threshold=0.0)),
         ("scaler", StandardScaler()),
@@ -328,6 +360,56 @@ def train_model(df, model_type="Ridge"):
     model.fit(df[fcols], df["sales"])
     return model, fcols
 
+<<<<<<< HEAD
+=======
+def compute_shap(model, fcols, df):
+    """Compute SHAP values for an XGBoost pipeline. Returns (pairs, shap_vals, kept_features)."""
+    support  = model.named_steps["var"].get_support()
+    kept     = [f for f, s in zip(fcols, support) if s]
+    X_var    = model.named_steps["var"].transform(df[fcols])
+    X_scaled = model.named_steps["scaler"].transform(X_var)
+    explainer  = shap.TreeExplainer(model.named_steps["reg"])
+    shap_vals  = explainer.shap_values(X_scaled)
+    mean_abs   = np.abs(shap_vals).mean(axis=0)
+    pairs = sorted(zip(kept, mean_abs.tolist()), key=lambda x: x[1], reverse=True)
+    return pairs, shap_vals, kept
+
+def generate_shap_text(pairs, fcast, hist, sel_pid):
+    """Produce a natural-language explanation from SHAP feature importances."""
+    fc_avg   = fcast["forecast"].mean()
+    prev_avg = hist["sales"].iloc[-4:].mean() if len(hist) >= 4 else hist["sales"].mean()
+    pct      = (fc_avg - prev_avg) / prev_avg * 100 if prev_avg else 0
+    direction = "increase" if pct > 0 else "decrease"
+
+    top3 = [FEAT_LABELS.get(f, f) for f, _ in pairs[:3]]
+    if len(top3) == 1:
+        drivers_str = top3[0]
+    else:
+        drivers_str = ", ".join(top3[:-1]) + f", and {top3[-1]}"
+
+    text = (f"Demand for Product {sel_pid} is forecast to <b>{direction} "
+            f"by {abs(pct):.1f}%</b> versus the previous 4 periods. "
+            f"The primary drivers identified by the model are: <b>{drivers_str}</b>. ")
+
+    lag_feats     = [f for f, _ in pairs[:6] if "lag" in f]
+    rolling_feats = [f for f, _ in pairs[:6] if "rolling" in f]
+    weather_feats = [f for f, _ in pairs[:6] if f in EXT_WEATHER_COLS]
+    holiday_feats = [f for f, _ in pairs[:6] if f in EXT_HOLIDAY_COLS]
+    trend_feats   = [f for f, _ in pairs[:6] if f == "trend"]
+
+    if lag_feats or rolling_feats:
+        text += "Recent sales history is the strongest signal — the model is largely extrapolating momentum from prior periods. "
+    if weather_feats:
+        wlabel = FEAT_LABELS.get(weather_feats[0], weather_feats[0]).lower()
+        text += f"Weather conditions (especially {wlabel}) are contributing meaningfully to the forecast. "
+    if holiday_feats:
+        text += "Upcoming or recent public holidays are also factored into the prediction. "
+    if trend_feats:
+        text += "A detectable long-term trend in this product's sales is shaping the outlook. "
+
+    return text
+
+>>>>>>> dashboard
 def forecast_4(model, fcols, df):
     delta    = df["date"].iloc[-1] - df["date"].iloc[-2]
     hist     = list(df["sales"]); rows = []
@@ -349,7 +431,11 @@ def forecast_4(model, fcols, df):
             h2=hist[-w:]; r[f"rolling_mean_{w}"]=np.mean(h2)
             r[f"rolling_std_{w}"]=np.std(h2) if len(h2)>1 else 0.0
         r.update(_ext_for_date(nd))
+<<<<<<< HEAD
         pred = model.predict(np.array([[r[c] for c in fcols]]))[0]
+=======
+        pred = model.predict(pd.DataFrame([[r[c] for c in fcols]], columns=fcols))[0]
+>>>>>>> dashboard
         pred = float(np.clip(pred, hist_p10, hist_max))
         hist.append(pred); r["forecast"]=pred; rows.append(r)
     return pd.DataFrame(rows)
@@ -373,8 +459,22 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
         fcast      = forecast_4(mdl, fcols, feat)
         r2_val     = float(r2_score(feat["sales"], mdl.predict(feat[fcols])))
         imp        = get_feature_importance(mdl, fcols)
+<<<<<<< HEAD
         out[pid if pid is not None else "all"] = {
             "history":feat, "forecast":fcast, "importance":imp, "r2":r2_val,
+=======
+        xai_data = None
+        if model_type == "XGBoost":
+            shap_pairs, shap_vals, shap_kept = compute_shap(mdl, fcols, feat)
+            xai_data = {"type": "shap", "pairs": shap_pairs,
+                        "vals": shap_vals, "kept": shap_kept}
+        elif model_type == "EBM":
+            ebm_pairs = list(get_feature_importance(mdl, fcols))
+            xai_data  = {"type": "ebm", "pairs": ebm_pairs}
+        out[pid if pid is not None else "all"] = {
+            "history":feat, "forecast":fcast, "importance":imp,
+            "r2":r2_val, "xai":xai_data,
+>>>>>>> dashboard
         }
     return out
 
@@ -400,7 +500,11 @@ uL, uM, uR, uRR = st.columns([2.3, 1, 1, 0.7], gap="medium")
 with uL:
     uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
 with uM:
+<<<<<<< HEAD
     model_type_sel = st.selectbox("Model", ["Ridge", "Lasso"], index=0)
+=======
+    model_type_sel = st.selectbox("Model", ["Ridge", "Lasso", "XGBoost", "EBM"], index=0)
+>>>>>>> dashboard
 with uR:
     sales_col_sel = None
     info = {}
@@ -526,6 +630,7 @@ if st.session_state.get("results"):
             st.pyplot(fig2, use_container_width=True)
 
         with xai_col:
+<<<<<<< HEAD
             st.markdown(f"""
             <div class='tile' style='min-height:300px'>
               <div style='font-size:20px;font-weight:800;color:{NAVY};
@@ -534,6 +639,69 @@ if st.session_state.get("results"):
                 Explainability
               </div>
             </div>""", unsafe_allow_html=True)
+=======
+            xai_data = pr.get("xai")
+            if xai_data and _mt in ("XGBoost", "EBM"):
+                pairs   = xai_data["pairs"]
+                top10   = pairs[:10]
+                feat_names_xai  = [FEAT_LABELS.get(f, f) for f, _ in top10][::-1]
+                xai_scores      = [float(v) for _, v in top10][::-1]
+                xai_label       = "Mean |SHAP value|" if _mt == "XGBoost" else "EBM Feature Importance"
+                imp_title       = "Top Feature Importances (SHAP)" if _mt == "XGBoost" \
+                                  else "Top Feature Importances (EBM)"
+
+                fig_xai = go.Figure(go.Bar(
+                    x=xai_scores, y=feat_names_xai,
+                    orientation="h",
+                    marker_color=BLUE,
+                    text=[f"{v:.3f}" for v in xai_scores],
+                    textposition="outside",
+                    textfont=dict(size=11, color=NAVY),
+                    cliponaxis=False,
+                ))
+                fig_xai.update_layout(
+                    paper_bgcolor=CARD, plot_bgcolor=CARD,
+                    height=320,
+                    margin=dict(l=10, r=50, t=10, b=30),
+                    xaxis=dict(title=xai_label,
+                               title_font=dict(size=11, color="#64748B"),
+                               tickfont=dict(size=10, color="#374151"),
+                               gridcolor=BORDER, zeroline=False),
+                    yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+                    showlegend=False,
+                )
+
+                xai_text = generate_shap_text(pairs, fcast, hist, sel_pid)
+
+                st.markdown(f"""
+                <div class='tile' style='min-height:300px'>
+                  <div style='font-size:20px;font-weight:800;color:{NAVY};
+                              border-bottom:2px solid {BORDER};padding-bottom:10px;
+                              margin-bottom:12px'>
+                    Explainability
+                  </div>
+                  <p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px'>
+                    {xai_text}
+                  </p>
+                  <div style='font-size:12px;font-weight:700;color:#94A3B8;
+                              letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px'>
+                    {imp_title}
+                  </div>
+                </div>""", unsafe_allow_html=True)
+                st.plotly_chart(fig_xai, use_container_width=True)
+            else:
+                st.markdown(f"""
+                <div class='tile' style='min-height:300px'>
+                  <div style='font-size:20px;font-weight:800;color:{NAVY};
+                              border-bottom:2px solid {BORDER};padding-bottom:10px;
+                              margin-bottom:10px'>
+                    Explainability
+                  </div>
+                  <p style='font-size:12px;color:#94A3B8;margin-top:8px'>
+                    Select <b>XGBoost</b> or <b>EBM</b> as the model and re-run to see explanations.
+                  </p>
+                </div>""", unsafe_allow_html=True)
+>>>>>>> dashboard
 
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
