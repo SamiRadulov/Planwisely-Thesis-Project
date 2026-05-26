@@ -360,8 +360,6 @@ def train_model(df, model_type="Ridge"):
     model.fit(df[fcols], df["sales"])
     return model, fcols
 
-<<<<<<< HEAD
-=======
 def compute_shap(model, fcols, df):
     """Compute SHAP values for an XGBoost pipeline. Returns (pairs, shap_vals, kept_features)."""
     support  = model.named_steps["var"].get_support()
@@ -409,7 +407,7 @@ def generate_shap_text(pairs, fcast, hist, sel_pid):
 
     return text
 
->>>>>>> dashboard
+
 def forecast_4(model, fcols, df):
     delta    = df["date"].iloc[-1] - df["date"].iloc[-2]
     hist     = list(df["sales"]); rows = []
@@ -431,11 +429,7 @@ def forecast_4(model, fcols, df):
             h2=hist[-w:]; r[f"rolling_mean_{w}"]=np.mean(h2)
             r[f"rolling_std_{w}"]=np.std(h2) if len(h2)>1 else 0.0
         r.update(_ext_for_date(nd))
-<<<<<<< HEAD
-        pred = model.predict(np.array([[r[c] for c in fcols]]))[0]
-=======
         pred = model.predict(pd.DataFrame([[r[c] for c in fcols]], columns=fcols))[0]
->>>>>>> dashboard
         pred = float(np.clip(pred, hist_p10, hist_max))
         hist.append(pred); r["forecast"]=pred; rows.append(r)
     return pd.DataFrame(rows)
@@ -459,10 +453,6 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
         fcast      = forecast_4(mdl, fcols, feat)
         r2_val     = float(r2_score(feat["sales"], mdl.predict(feat[fcols])))
         imp        = get_feature_importance(mdl, fcols)
-<<<<<<< HEAD
-        out[pid if pid is not None else "all"] = {
-            "history":feat, "forecast":fcast, "importance":imp, "r2":r2_val,
-=======
         xai_data = None
         if model_type == "XGBoost":
             shap_pairs, shap_vals, shap_kept = compute_shap(mdl, fcols, feat)
@@ -474,7 +464,6 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
         out[pid if pid is not None else "all"] = {
             "history":feat, "forecast":fcast, "importance":imp,
             "r2":r2_val, "xai":xai_data,
->>>>>>> dashboard
         }
     return out
 
@@ -500,11 +489,7 @@ uL, uM, uR, uRR = st.columns([2.3, 1, 1, 0.7], gap="medium")
 with uL:
     uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
 with uM:
-<<<<<<< HEAD
-    model_type_sel = st.selectbox("Model", ["Ridge", "Lasso"], index=0)
-=======
     model_type_sel = st.selectbox("Model", ["Ridge", "Lasso", "XGBoost", "EBM"], index=0)
->>>>>>> dashboard
 with uR:
     sales_col_sel = None
     info = {}
@@ -630,16 +615,6 @@ if st.session_state.get("results"):
             st.pyplot(fig2, use_container_width=True)
 
         with xai_col:
-<<<<<<< HEAD
-            st.markdown(f"""
-            <div class='tile' style='min-height:300px'>
-              <div style='font-size:20px;font-weight:800;color:{NAVY};
-                          border-bottom:2px solid {BORDER};padding-bottom:10px;
-                          margin-bottom:10px'>
-                Explainability
-              </div>
-            </div>""", unsafe_allow_html=True)
-=======
             xai_data = pr.get("xai")
             if xai_data and _mt in ("XGBoost", "EBM"):
                 pairs   = xai_data["pairs"]
@@ -701,7 +676,6 @@ if st.session_state.get("results"):
                     Select <b>XGBoost</b> or <b>EBM</b> as the model and re-run to see explanations.
                   </p>
                 </div>""", unsafe_allow_html=True)
->>>>>>> dashboard
 
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
