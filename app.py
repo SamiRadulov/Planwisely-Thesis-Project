@@ -1,20 +1,21 @@
 import io
 import warnings
-import pathlib
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import Ridge, Lasso
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
-from sklearn.feature_selection import VarianceThreshold
-from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import plotly.graph_objects as go
-from xgboost import XGBRegressor
-import shap
-from interpret.glassbox import ExplainableBoostingRegressor
+from sklearn.metrics import r2_score
+
+from feature_engineering import (
+    build_features, get_external_for_date,
+    HAS_WEATHER, HAS_HOLIDAY, HAS_COVID, HAS_SCHOOL,
+    WEATHER_COLS, HOLIDAY_COLS, COVID_COLS, SCHOOL_COLS,
+)
+from models import FCOLS, FEAT_LABELS, train_model, get_feature_importance
+from shap_utils import compute_shap, generate_shap_text
+
 warnings.filterwarnings("ignore")
 
 LOGO   = "https://planwisely.ai/wp-content/uploads/2024/08/Planwisely01_1765553.png"
@@ -25,53 +26,6 @@ RED    = "#EF4444"
 AMBER  = "#F59E0B"
 CARD   = "#FFFFFF"
 BORDER = "#E2E8F0"
-
-_HERE = pathlib.Path(__file__).parent
-try:
-    _WEATHER_RAW = pd.read_csv(_HERE / "weather_weekly.csv")
-    _HOLIDAY_RAW = pd.read_csv(_HERE / "holiday_weekly.csv")
-    HAS_EXTERNAL = True
-    EXT_WEATHER_COLS = ["temp_mean","temp_min","temp_max","precip_sum",
-                        "sunshine_sum","temp_anomaly","heavy_rain"]
-    EXT_HOLIDAY_COLS = ["has_holiday","min_days_to_holiday","hol_ascension",
-                        "hol_christmas","hol_easter","hol_kings_day",
-                        "hol_liberation_day","hol_new_year","hol_pentecost"]
-    _WEATHER_AVGS = _WEATHER_RAW.groupby("week")[EXT_WEATHER_COLS].mean().reset_index()
-except Exception:
-    _WEATHER_RAW = _HOLIDAY_RAW = _WEATHER_AVGS = None
-    HAS_EXTERNAL = False
-    EXT_WEATHER_COLS = []
-    EXT_HOLIDAY_COLS = []
-
-EXT_COLS   = EXT_WEATHER_COLS + EXT_HOLIDAY_COLS
-FCOLS_BASE = [
-    "trend","month","week_of_year","quarter",
-    "is_month_start","is_month_end",
-    "month_sin","month_cos","week_sin","week_cos",
-    "lag_1","lag_2","lag_4","lag_8",
-    "rolling_mean_4","rolling_mean_8","rolling_std_4","rolling_std_8",
-]
-FCOLS = FCOLS_BASE + EXT_COLS
-
-FEAT_LABELS = {
-    "lag_1":"Last period sales","lag_2":"Sales 2 periods ago",
-    "lag_4":"Sales 4 periods ago","lag_8":"Sales 8 periods ago",
-    "rolling_mean_4":"4-period avg","rolling_mean_8":"8-period avg",
-    "rolling_std_4":"4-period volatility","rolling_std_8":"8-period volatility",
-    "trend":"Long-term trend","month":"Month of year",
-    "week_of_year":"Week of year","quarter":"Quarter",
-    "is_month_start":"Month start","is_month_end":"Month end",
-    "month_sin":"Seasonality (month)","month_cos":"Seasonality (month)",
-    "week_sin":"Seasonality (week)","week_cos":"Seasonality (week)",
-    "temp_mean":"Avg temperature","temp_min":"Min temperature",
-    "temp_max":"Max temperature","precip_sum":"Precipitation",
-    "sunshine_sum":"Sunshine hours","temp_anomaly":"Temp anomaly",
-    "heavy_rain":"Heavy rain","has_holiday":"Holiday week",
-    "min_days_to_holiday":"Days to holiday","hol_ascension":"Ascension Day",
-    "hol_christmas":"Christmas","hol_easter":"Easter",
-    "hol_kings_day":"King's Day","hol_liberation_day":"Liberation Day",
-    "hol_new_year":"New Year","hol_pentecost":"Pentecost",
-}
 
 st.set_page_config(page_title="Planwisely - Sales Forecast", page_icon="??", layout="wide")
 
@@ -222,9 +176,18 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-ext_pill = ('<span style="background:#10B981;color:#fff;font-size:9px;font-weight:700;'
-            'padding:2px 8px;border-radius:9999px;margin-left:10px;vertical-align:middle">'
-            'Weather and Holiday data loaded</span>') if HAS_EXTERNAL else ""
+ext_parts = []
+if HAS_WEATHER: ext_parts.append("Weather")
+if HAS_HOLIDAY: ext_parts.append("Holiday")
+if HAS_COVID:   ext_parts.append("COVID")
+if HAS_SCHOOL:  ext_parts.append("School holidays")
+
+ext_pill = (
+    f'<span style="background:#10B981;color:#fff;font-size:9px;font-weight:700;'
+    f'padding:2px 8px;border-radius:9999px;margin-left:10px;vertical-align:middle">'
+    f'{" + ".join(ext_parts)} data loaded</span>'
+) if ext_parts else ""
+
 st.markdown(f"""
 <div style="display:flex;align-items:center;gap:16px;padding:2px 0 12px">
   <img src="{LOGO}" style="width:140px;height:auto;filter:brightness(0) invert(1);">
@@ -233,7 +196,7 @@ st.markdown(f"""
       Sales Demand Forecast{ext_pill}
     </div>
     <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:3px">
-      Upload your sales CSV - feature engineering, external data merging, and forecasting run automatically.
+      Upload your sales CSV — feature engineering, external data merging, and forecasting run automatically.
     </div>
   </div>
 </div>
@@ -269,168 +232,42 @@ def build_date_series(df, info):
                                    month=df[info["month_col"]], day=df[info["day_col"]]))
     return pd.to_datetime(df[info["date_col"]], infer_datetime_format=True, errors="coerce")
 
-def feature_engineering(df_in):
-    df = df_in[["date","sales"]].copy().sort_values("date").reset_index(drop=True)
-    df["sales"] = pd.to_numeric(df["sales"], errors="coerce")
-    df = df.dropna(subset=["sales"])
-    df["year"]           = df["date"].dt.isocalendar().year.astype(int)
-    df["month"]          = df["date"].dt.month
-    df["week_of_year"]   = df["date"].dt.isocalendar().week.astype(int)
-    df["day_of_week"]    = df["date"].dt.dayofweek
-    df["is_month_start"] = (df["date"].dt.day <= 7).astype(int)
-    df["is_month_end"]   = (df["date"].dt.day >= 24).astype(int)
-    df["quarter"]        = df["date"].dt.quarter
-    df["month_sin"] = np.sin(2*np.pi*df["month"]/12)
-    df["month_cos"] = np.cos(2*np.pi*df["month"]/12)
-    df["week_sin"]  = np.sin(2*np.pi*df["week_of_year"]/52)
-    df["week_cos"]  = np.cos(2*np.pi*df["week_of_year"]/52)
-    for lag in [1,2,4,8]:
-        df[f"lag_{lag}"] = df["sales"].shift(lag)
-    for w in [4,8]:
-        df[f"rolling_mean_{w}"] = df["sales"].shift(1).rolling(w,min_periods=1).mean()
-        df[f"rolling_std_{w}"]  = df["sales"].shift(1).rolling(w,min_periods=1).std().fillna(0)
-    df["trend"] = np.arange(len(df))
-    if HAS_EXTERNAL:
-        wdf = _WEATHER_RAW.rename(columns={"week":"week_of_year"})
-        df  = df.merge(wdf[["year","week_of_year"]+EXT_WEATHER_COLS], on=["year","week_of_year"], how="left")
-        hdf = _HOLIDAY_RAW.rename(columns={"week":"week_of_year"})
-        df  = df.merge(hdf[["year","week_of_year"]+EXT_HOLIDAY_COLS], on=["year","week_of_year"], how="left")
-        for col in EXT_WEATHER_COLS:
-            if col in df.columns: df[col] = df[col].fillna(df[col].mean())
-        for col in EXT_HOLIDAY_COLS:
-            if col in df.columns: df[col] = df[col].fillna(0)
-    return df.dropna(subset=["lag_1","lag_2","lag_4","lag_8"])
-
-def _ext_for_date(nd):
-    if not HAS_EXTERNAL: return {}
-    week = int(nd.isocalendar()[1]); year = int(nd.isocalendar()[0])
-    r = {}
-    w_row = _WEATHER_AVGS[_WEATHER_AVGS["week"] == week]
-    for col in EXT_WEATHER_COLS:
-        r[col] = float(w_row[col].values[0]) if len(w_row) > 0 else 0.0
-    h_row = _HOLIDAY_RAW[(_HOLIDAY_RAW["year"]==year) & (_HOLIDAY_RAW["week"]==week)]
-    for col in EXT_HOLIDAY_COLS:
-        r[col] = float(h_row[col].values[0]) if len(h_row) > 0 else 0.0
-    return r
-
-def get_feature_importance(model, fcols):
-    support = model.named_steps["var"].get_support()
-    kept    = [f for f, s in zip(fcols, support) if s]
-    reg     = model.named_steps["reg"]
-    if isinstance(reg, XGBRegressor):
-        scores = reg.get_booster().get_score(importance_type="gain")
-        result = [(f, scores.get(f"f{i}", 0.0)) for i, f in enumerate(kept)]
-        return sorted(result, key=lambda x: abs(x[1]), reverse=True)
-    if isinstance(reg, ExplainableBoostingRegressor):
-        data   = reg.explain_global().data()
-        # With set_output("pandas"), EBM uses real feature names directly
-        names  = data["names"]
-        scores = [float(s) for s in data["scores"]]
-        return sorted(zip(names, scores), key=lambda x: abs(x[1]), reverse=True)
-    coef = reg.coef_
-    return sorted([(f, float(c)) for f, c in zip(kept, coef)],
-                  key=lambda x: abs(x[1]), reverse=True)
-
-def train_model(df, model_type="Ridge"):
-    fcols = [c for c in FCOLS if c in df.columns]
-    if model_type == "Lasso":
-        reg = Lasso(alpha=1.0, max_iter=10000)
-    elif model_type == "XGBoost":
-        reg = XGBRegressor(n_estimators=300, learning_rate=0.05, max_depth=4,
-                           subsample=0.8, colsample_bytree=0.8, random_state=42,
-                           verbosity=0)
-    elif model_type == "EBM":
-        # EBM is a tree-based method — no StandardScaler needed.
-        # set_output("pandas") ensures VarianceThreshold passes a named DataFrame
-        # so EBM picks up real feature names in explain_global().
-        var = VarianceThreshold(threshold=0.0).set_output(transform="pandas")
-        reg = ExplainableBoostingRegressor(random_state=42, n_jobs=-1,
-                                           max_bins=128, interactions=5,
-                                           max_rounds=500, learning_rate=0.05)
-        model = Pipeline([("var", var), ("reg", reg)])
-        model.fit(df[fcols], df["sales"])
-        return model, fcols
-    else:
-        reg = Ridge(alpha=10.0)
-    model = Pipeline([
-        ("var",    VarianceThreshold(threshold=0.0)),
-        ("scaler", StandardScaler()),
-        ("reg",    reg),
-    ])
-    model.fit(df[fcols], df["sales"])
-    return model, fcols
-
-def compute_shap(model, fcols, df):
-    """Compute SHAP values for an XGBoost pipeline. Returns (pairs, shap_vals, kept_features)."""
-    support  = model.named_steps["var"].get_support()
-    kept     = [f for f, s in zip(fcols, support) if s]
-    X_var    = model.named_steps["var"].transform(df[fcols])
-    X_scaled = model.named_steps["scaler"].transform(X_var)
-    explainer  = shap.TreeExplainer(model.named_steps["reg"])
-    shap_vals  = explainer.shap_values(X_scaled)
-    mean_abs   = np.abs(shap_vals).mean(axis=0)
-    pairs = sorted(zip(kept, mean_abs.tolist()), key=lambda x: x[1], reverse=True)
-    return pairs, shap_vals, kept
-
-def generate_shap_text(pairs, fcast, hist, sel_pid):
-    """Produce a natural-language explanation from SHAP feature importances."""
-    fc_avg   = fcast["forecast"].mean()
-    prev_avg = hist["sales"].iloc[-4:].mean() if len(hist) >= 4 else hist["sales"].mean()
-    pct      = (fc_avg - prev_avg) / prev_avg * 100 if prev_avg else 0
-    direction = "increase" if pct > 0 else "decrease"
-
-    top3 = [FEAT_LABELS.get(f, f) for f, _ in pairs[:3]]
-    if len(top3) == 1:
-        drivers_str = top3[0]
-    else:
-        drivers_str = ", ".join(top3[:-1]) + f", and {top3[-1]}"
-
-    text = (f"Demand for Product {sel_pid} is forecast to <b>{direction} "
-            f"by {abs(pct):.1f}%</b> versus the previous 4 periods. "
-            f"The primary drivers identified by the model are: <b>{drivers_str}</b>. ")
-
-    lag_feats     = [f for f, _ in pairs[:6] if "lag" in f]
-    rolling_feats = [f for f, _ in pairs[:6] if "rolling" in f]
-    weather_feats = [f for f, _ in pairs[:6] if f in EXT_WEATHER_COLS]
-    holiday_feats = [f for f, _ in pairs[:6] if f in EXT_HOLIDAY_COLS]
-    trend_feats   = [f for f, _ in pairs[:6] if f == "trend"]
-
-    if lag_feats or rolling_feats:
-        text += "Recent sales history is the strongest signal — the model is largely extrapolating momentum from prior periods. "
-    if weather_feats:
-        wlabel = FEAT_LABELS.get(weather_feats[0], weather_feats[0]).lower()
-        text += f"Weather conditions (especially {wlabel}) are contributing meaningfully to the forecast. "
-    if holiday_feats:
-        text += "Upcoming or recent public holidays are also factored into the prediction. "
-    if trend_feats:
-        text += "A detectable long-term trend in this product's sales is shaping the outlook. "
-
-    return text
-
 def forecast_4(model, fcols, df):
+    """Iteratively predict 4 periods ahead, feeding each prediction as a lag."""
     delta    = df["date"].iloc[-1] - df["date"].iloc[-2]
-    hist     = list(df["sales"]); rows = []
+    hist     = list(df["sales"])
     hist_max = df["sales"].max() * 3
     hist_p10 = max(0, df["sales"].quantile(0.10) * 0.5)
+    rows     = []
     for i in range(4):
-        nd = df["date"].iloc[-1] + (i+1)*delta
-        r  = {"date":nd,"year":int(nd.isocalendar()[0]),"month":nd.month,
-              "week_of_year":int(nd.isocalendar()[1]),"day_of_week":nd.dayofweek,
-              "is_month_start":int(nd.day<=7),"is_month_end":int(nd.day>=24),
-              "quarter":nd.quarter,"trend":len(df)+i}
-        r["month_sin"] = np.sin(2*np.pi*r["month"]/12)
-        r["month_cos"] = np.cos(2*np.pi*r["month"]/12)
-        r["week_sin"]  = np.sin(2*np.pi*r["week_of_year"]/52)
-        r["week_cos"]  = np.cos(2*np.pi*r["week_of_year"]/52)
-        for lag in [1,2,4,8]:
-            r[f"lag_{lag}"] = hist[-lag] if len(hist)>=lag else np.nan
-        for w in [4,8]:
-            h2=hist[-w:]; r[f"rolling_mean_{w}"]=np.mean(h2)
-            r[f"rolling_std_{w}"]=np.std(h2) if len(h2)>1 else 0.0
-        r.update(_ext_for_date(nd))
+        nd = df["date"].iloc[-1] + (i + 1) * delta
+        r  = {
+            "date": nd,
+            "year": int(nd.isocalendar()[0]),
+            "month": nd.month,
+            "week_of_year": int(nd.isocalendar()[1]),
+            "day_of_week": nd.dayofweek,
+            "is_month_start": int(nd.day <= 7),
+            "is_month_end": int(nd.day >= 24),
+            "quarter": nd.quarter,
+            "trend": len(df) + i,
+        }
+        r["month_sin"] = np.sin(2 * np.pi * r["month"] / 12)
+        r["month_cos"] = np.cos(2 * np.pi * r["month"] / 12)
+        r["week_sin"]  = np.sin(2 * np.pi * r["week_of_year"] / 52)
+        r["week_cos"]  = np.cos(2 * np.pi * r["week_of_year"] / 52)
+        for lag in [1, 2, 4, 8]:
+            r[f"lag_{lag}"] = hist[-lag] if len(hist) >= lag else np.nan
+        for w in [4, 8]:
+            h2 = hist[-w:]
+            r[f"rolling_mean_{w}"] = np.mean(h2)
+            r[f"rolling_std_{w}"]  = np.std(h2) if len(h2) > 1 else 0.0
+        r.update(get_external_for_date(nd))
         pred = model.predict(pd.DataFrame([[r[c] for c in fcols]], columns=fcols))[0]
         pred = float(np.clip(pred, hist_p10, hist_max))
-        hist.append(pred); r["forecast"]=pred; rows.append(r)
+        hist.append(pred)
+        r["forecast"] = pred
+        rows.append(r)
     return pd.DataFrame(rows)
 
 @st.cache_data(show_spinner=False)
@@ -440,14 +277,19 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
     info = dict(date_mode=date_mode, date_col=date_col, year_col=year_col,
                 month_col=month_col, day_col=day_col, product_col=product_col)
     out  = {}
-    pids = [None] if product_col is None else \
-           df.groupby(product_col).filter(lambda x: len(x)>=20)[product_col].unique().tolist()
+    pids = (
+        [None] if product_col is None
+        else df.groupby(product_col)
+               .filter(lambda x: len(x) >= 20)[product_col]
+               .unique().tolist()
+    )
     for pid in pids:
-        sub = (df if pid is None else df[df[product_col]==pid]).copy()
+        sub          = (df if pid is None else df[df[product_col] == pid]).copy()
         sub["date"]  = build_date_series(sub, info)
         sub["sales"] = pd.to_numeric(sub[sales_col], errors="coerce")
-        feat = feature_engineering(sub[["date","sales"]].dropna())
-        if len(feat) < 20: continue
+        feat         = build_features(sub[["date", "sales"]].dropna())
+        if len(feat) < 20:
+            continue
         mdl, fcols = train_model(feat, model_type)
         fcast      = forecast_4(mdl, fcols, feat)
         r2_val     = float(r2_score(feat["sales"], mdl.predict(feat[fcols])))
@@ -458,11 +300,10 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
             xai_data = {"type": "shap", "pairs": shap_pairs,
                         "vals": shap_vals, "kept": shap_kept}
         elif model_type == "EBM":
-            ebm_pairs = list(get_feature_importance(mdl, fcols))
-            xai_data  = {"type": "ebm", "pairs": ebm_pairs}
+            xai_data = {"type": "ebm", "pairs": list(imp)}
         out[pid if pid is not None else "all"] = {
-            "history":feat, "forecast":fcast, "importance":imp,
-            "r2":r2_val, "xai":xai_data,
+            "history": feat, "forecast": fcast,
+            "importance": imp, "r2": r2_val, "xai": xai_data,
         }
     return out
 
@@ -514,8 +355,8 @@ if "rb" in st.session_state and uploaded is not None:
     _mt = model_type_sel
     if st.session_state.get("mtype") != _mt:
         st.session_state["mtype"] = _mt
-    feat_note = "time-series + weather + holiday" if HAS_EXTERNAL else "time-series"
-    with st.spinner(f"Running {_mt} on {feat_note} features..."):
+    ext_note = " + ".join(ext_parts) if ext_parts else "time-series only"
+    with st.spinner(f"Running {_mt} — features: time-series + {ext_note}..."):
         results = run_all(
             st.session_state["rb"], st.session_state["sc"],
             st.session_state["inf"]["date_mode"], st.session_state["inf"]["date_col"],
