@@ -116,3 +116,22 @@ def generate_shap_text(pairs, fcast, hist, sel_pid):
         text += "A detectable long-term trend in this product's sales is shaping the outlook. "
 
     return text
+
+def compute_shap_lightgbm(model, fcols, df):
+    support = model.named_steps["var"].get_support()
+    kept = [f for f, s in zip(fcols, support) if s]
+
+    X_var = model.named_steps["var"].transform(df[fcols])
+
+    explainer = shap.TreeExplainer(model.named_steps["reg"])
+    shap_vals = explainer.shap_values(X_var)
+
+    mean_abs = np.abs(shap_vals).mean(axis=0)
+
+    pairs = sorted(
+        zip(kept, mean_abs.tolist()),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    return pairs, shap_vals, kept
