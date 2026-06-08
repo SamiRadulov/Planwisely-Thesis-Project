@@ -299,6 +299,18 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
             shap_pairs, shap_vals, shap_kept = compute_shap(mdl, fcols, feat)
             xai_data = {"type": "shap", "pairs": shap_pairs,
                         "vals": shap_vals, "kept": shap_kept}
+        elif model_type == "LightGBM":
+            from shap_utils import compute_shap_lightgbm
+            shap_pairs, shap_vals, shap_kept = compute_shap_lightgbm(
+                mdl, fcols, feat
+            )
+        
+            xai_data = {
+                "type": "shap",
+                "pairs": shap_pairs,
+                "vals": shap_vals,
+                "kept": shap_kept
+            }
         elif model_type == "EBM":
             xai_data = {"type": "ebm", "pairs": list(imp)}
         out[pid if pid is not None else "all"] = {
@@ -329,7 +341,7 @@ uL, uM, uR, uRR = st.columns([2.3, 1, 1, 0.7], gap="medium")
 with uL:
     uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
 with uM:
-    model_type_sel = st.selectbox("Model", ["Ridge", "Lasso", "XGBoost", "EBM"], index=0)
+    model_type_sel = st.selectbox("Model", ["Ridge", "Lasso", "XGBoost", "EBM", "LighGBM"], index=0)
 with uR:
     sales_col_sel = None
     info = {}
