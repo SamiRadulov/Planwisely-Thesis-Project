@@ -23,6 +23,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import VarianceThreshold
 from xgboost import XGBRegressor
 from interpret.glassbox import ExplainableBoostingRegressor
+from lightgbm_model import build_pipeline as _build_lightgbm
 
 from feature_engineering import (
     FCOLS_BASE,
@@ -118,6 +119,7 @@ _BUILDERS = {
     "Lasso":   _build_lasso,
     "XGBoost": _build_xgboost,
     "EBM":     _build_ebm,
+    "LightGBM": _build_lightgbm,
 }
 
 
