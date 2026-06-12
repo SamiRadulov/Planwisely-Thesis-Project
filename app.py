@@ -341,7 +341,7 @@ uL, uM, uR, uRR = st.columns([2.3, 1, 1, 0.7], gap="medium")
 with uL:
     uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
 with uM:
-    model_type_sel = st.selectbox("Model", ["Ridge", "Lasso", "XGBoost", "EBM", "LighGBM"], index=0)
+    model_type_sel = st.selectbox("Model", ["Ridge", "Lasso", "XGBoost", "EBM", "LightGBM"], index=0)
 with uR:
     sales_col_sel = None
     info = {}
