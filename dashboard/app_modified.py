@@ -15,6 +15,7 @@ from feature_engineering import (
 )
 from models import FCOLS, FEAT_LABELS, train_model, get_feature_importance
 from shap_utils import compute_shap, generate_shap_text
+from lime_utils import compute_lime, generate_lime_text
 
 warnings.filterwarnings("ignore")
 
