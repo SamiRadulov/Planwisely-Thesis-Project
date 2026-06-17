@@ -364,12 +364,24 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
             'kept':  shap_feat_cols,
         }
 
+        # ── LIME (local explanation for XGBoost and LightGBM) ─────────────
+        lime_data = None
+        if model_type in ("XGBoost", "LightGBM"):
+            try:
+                available_fcols = [c for c in FCOLS if c in hist.columns]
+                last_row = hist[available_fcols].iloc[[-1]]
+                lime_pairs = compute_lime(model, FCOLS, hist[available_fcols], last_row)
+                lime_data = {'type': 'lime', 'pairs': lime_pairs}
+            except Exception:
+                lime_data = None
+
         out[pid] = {
             'history':    hist,
             'forecast':   fcast,
             'importance': {f: v for f, v, _ in pairs},
             'r2':         r2_val,
             'xai':        xai_data,
+            'lime':       lime_data,
         }
 
     return out
@@ -521,20 +533,75 @@ if st.session_state.get("results"):
             plt.tight_layout(pad=0.4)
             st.pyplot(fig2, use_container_width=True)
 
+def _render_lime_panel(lime_data, fcast, hist, sel_pid):
+    """Render the LIME local explanation bar chart and text."""
+    pairs   = lime_data["pairs"]   # list of (label, weight)
+    labels  = [p[0] for p in pairs[:10]]
+    weights = [p[1] for p in pairs[:10]]
+    colors  = [GREEN if w >= 0 else RED for w in weights]
+
+    fig_lime = go.Figure(go.Bar(
+        x=weights,
+        y=labels,
+        orientation="h",
+        marker_color=colors,
+        text=[f"+{v:.2f}" if v >= 0 else f"{v:.2f}" for v in weights],
+        textposition="outside",
+        textfont=dict(size=11, color=NAVY),
+        cliponaxis=False,
+    ))
+    fig_lime.update_layout(
+        paper_bgcolor=CARD, plot_bgcolor=CARD,
+        height=320,
+        margin=dict(l=10, r=60, t=10, b=30),
+        xaxis=dict(
+            title="LIME weight (impact on prediction)",
+            title_font=dict(size=11, color="#64748B"),
+            tickfont=dict(size=10, color="#374151"),
+            gridcolor=BORDER,
+            zeroline=True,
+            zerolinecolor=NAVY,
+            zerolinewidth=1.5,
+        ),
+        yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+        showlegend=False,
+    )
+
+    lime_text = generate_lime_text(pairs, fcast, hist, sel_pid)
+
+    st.markdown(f"""
+    <div class='tile' style='min-height:300px'>
+      <div style='font-size:20px;font-weight:800;color:{NAVY};
+                  border-bottom:2px solid {BORDER};padding-bottom:10px;
+                  margin-bottom:12px'>
+        Local Explainability (LIME)
+      </div>
+      <p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px'>
+        {lime_text}
+      </p>
+      <div style='font-size:12px;font-weight:700;color:#94A3B8;
+                  letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px'>
+        Top Local Feature Contributions (LIME)
+      </div>
+    </div>""", unsafe_allow_html=True)
+    st.plotly_chart(fig_lime, use_container_width=True)
+
         with xai_col:
-            xai_data = pr.get("xai")
+            xai_data  = pr.get("xai")
+            lime_data = pr.get("lime")
+
             if xai_data and _mt in ("XGBoost", "EBM"):
-                pairs   = xai_data["pairs"]
-                top10 = pairs[:10]
-                top10 = [(p[0], p[1], p[2] if len(p) > 2 else 0.0) for p in top10]
-                top10_sorted   = sorted(top10, key=lambda x: abs(x[2]))
-                feat_names_xai = [FEAT_LABELS.get(f, f) for f, _, _ in top10_sorted]
-                xai_scores     = [float(v) for _, v, _ in top10_sorted]
-                xai_signed     = [float(s) for _, _, s in top10_sorted]
-                bar_colors     = [GREEN if s >= 0 else RED for s in xai_signed]
+                pairs           = xai_data["pairs"]
+                top10           = pairs[:10]
+                top10           = [(p[0], p[1], p[2] if len(p) > 2 else 0.0) for p in top10]
+                top10_sorted    = sorted(top10, key=lambda x: abs(x[2]))
+                feat_names_xai  = [FEAT_LABELS.get(f, f) for f, _, _ in top10_sorted]
+                xai_scores      = [float(v) for _, v, _ in top10_sorted]
+                xai_signed      = [float(s) for _, _, s in top10_sorted]
+                bar_colors      = [GREEN if s >= 0 else RED for s in xai_signed]
                 xai_label       = "Mean |SHAP value|" if _mt == "XGBoost" else "EBM Feature Importance"
                 imp_title       = "Top Feature Importances (SHAP)" if _mt == "XGBoost" \
-                                  else "Top Feature Importances (EBM)"
+                                    else "Top Feature Importances (EBM)"
 
                 fig_xai = go.Figure(go.Bar(
                     x=xai_signed,
@@ -561,8 +628,8 @@ if st.session_state.get("results"):
                     ),
                     yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
                     showlegend=False,
-                    )
-                
+                )
+
                 xai_text = generate_shap_text(pairs, fcast, hist, sel_pid)
 
                 st.markdown(f"""
@@ -581,6 +648,15 @@ if st.session_state.get("results"):
                   </div>
                 </div>""", unsafe_allow_html=True)
                 st.plotly_chart(fig_xai, use_container_width=True)
+
+                # LIME below SHAP for XGBoost
+                if _mt == "XGBoost" and lime_data:
+                    _render_lime_panel(lime_data, fcast, hist, sel_pid)
+
+            elif _mt == "LightGBM" and lime_data:
+                # LightGBM gets LIME only
+                _render_lime_panel(lime_data, fcast, hist, sel_pid)
+
             else:
                 st.markdown(f"""
                 <div class='tile' style='min-height:300px'>
@@ -590,7 +666,7 @@ if st.session_state.get("results"):
                     Explainability
                   </div>
                   <p style='font-size:12px;color:#94A3B8;margin-top:8px'>
-                    Select <b>XGBoost</b> or <b>EBM</b> as the model and re-run to see explanations.
+                    Select <b>XGBoost</b>, <b>EBM</b>, or <b>LightGBM</b> as the model and re-run to see explanations.
                   </p>
                 </div>""", unsafe_allow_html=True)
 
