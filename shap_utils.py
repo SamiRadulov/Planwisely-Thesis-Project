@@ -74,7 +74,7 @@ def generate_shap_text(pairs, fcast, hist, sel_pid):
     pct      = (fc_avg - prev_avg) / prev_avg * 100 if prev_avg else 0
     direction = "increase" if pct > 0 else "decrease"
 
-    top3 = [FEAT_LABELS.get(f, f) for f, _ in pairs[:3]]
+    top3 = [FEAT_LABELS.get(f, f) for f, *_ in pairs[:3]]
     drivers_str = (
         top3[0] if len(top3) == 1
         else ", ".join(top3[:-1]) + f", and {top3[-1]}"
@@ -86,7 +86,7 @@ def generate_shap_text(pairs, fcast, hist, sel_pid):
         f"The primary drivers identified by the model are: <b>{drivers_str}</b>. "
     )
 
-    top6_feats    = [f for f, _ in pairs[:6]]
+    top6_feats    = [f for f, *_ in pairs[:6]]
     lag_feats     = [f for f in top6_feats if "lag" in f]
     rolling_feats = [f for f in top6_feats if "rolling" in f]
     weather_feats = [f for f in top6_feats if f in WEATHER_COLS]
