@@ -22,6 +22,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import VarianceThreshold
 from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
 from interpret.glassbox import ExplainableBoostingRegressor
 from lightgbm_model import build_pipeline as _build_lightgbm
 
@@ -158,6 +159,10 @@ def get_feature_importance(model, fcols):
         scores = reg.get_booster().get_score(importance_type="gain")
         result = [(f, scores.get(f"f{i}", 0.0)) for i, f in enumerate(kept)]
         return sorted(result, key=lambda x: abs(x[1]), reverse=True)
+
+    if isinstance(reg, LGBMRegressor):
+        scores = reg.feature_importances_.tolist()
+        return sorted(zip(kept, scores), key=lambda x: abs(x[1]), reverse=True)
 
     if isinstance(reg, ExplainableBoostingRegressor):
         data   = reg.explain_global().data()

@@ -15,6 +15,7 @@ from feature_engineering import (
 )
 from models import FCOLS, FEAT_LABELS, train_model, get_feature_importance
 from shap_utils import compute_shap, generate_shap_text
+from lime_utils import compute_lime, generate_lime_text
 
 warnings.filterwarnings("ignore")
 
@@ -295,27 +296,24 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
         r2_val     = float(r2_score(feat["sales"], mdl.predict(feat[fcols])))
         imp        = get_feature_importance(mdl, fcols)
         xai_data = None
-        if model_type == "XGBoost":
-            shap_pairs, shap_vals, shap_kept = compute_shap(mdl, fcols, feat)
-            xai_data = {"type": "shap", "pairs": shap_pairs,
+        if model_type in ("XGBoost", "LightGBM"):
+            if model_type == "XGBoost":
+                shap_pairs, shap_vals, shap_kept = compute_shap(mdl, fcols, feat)
+            else:
+                from shap_utils import compute_shap_lightgbm
+                shap_pairs, shap_vals, shap_kept = compute_shap_lightgbm(mdl, fcols, feat)
+            # signed mean SHAP per feature (direction, not just magnitude)
+            mean_signed  = np.asarray(shap_vals).mean(axis=0)
+            signed_map   = dict(zip(shap_kept, mean_signed.tolist()))
+            pairs_signed = [(f, v, signed_map.get(f, 0.0)) for f, v in shap_pairs]
+            xai_data = {"type": "shap", "pairs": pairs_signed,
                         "vals": shap_vals, "kept": shap_kept}
-        elif model_type == "LightGBM":
-            from shap_utils import compute_shap_lightgbm
-            shap_pairs, shap_vals, shap_kept = compute_shap_lightgbm(
-                mdl, fcols, feat
-            )
-        
-            xai_data = {
-                "type": "shap",
-                "pairs": shap_pairs,
-                "vals": shap_vals,
-                "kept": shap_kept
-            }
         elif model_type == "EBM":
             xai_data = {"type": "ebm", "pairs": list(imp)}
         out[pid if pid is not None else "all"] = {
             "history": feat, "forecast": fcast,
             "importance": imp, "r2": r2_val, "xai": xai_data,
+            "model": mdl, "fcols": fcols,
         }
     return out
 
@@ -336,13 +334,61 @@ def arrow(pc):
     if pc < -5: return f"<span style='color:{RED};font-weight:800'>down</span>"
     return             f"<span style='color:{AMBER};font-weight:800'>flat</span>"
 
+def _render_lime_panel(pairs, fcast, hist, sel_pid):
+    """Render the LIME local-explanation bar chart and text for one prediction."""
+    labels  = [p[0] for p in pairs[:10]]
+    weights = [p[1] for p in pairs[:10]]
+    colors  = [GREEN if w >= 0 else RED for w in weights]
+    fig_lime = go.Figure(go.Bar(
+        x=weights, y=labels, orientation="h", marker_color=colors,
+        text=[f"+{v:.2f}" if v >= 0 else f"{v:.2f}" for v in weights],
+        textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
+    ))
+    fig_lime.update_layout(
+        paper_bgcolor=CARD, plot_bgcolor=CARD, height=320,
+        margin=dict(l=10, r=60, t=10, b=30),
+        xaxis=dict(title="LIME weight (impact on prediction)",
+                   title_font=dict(size=11, color="#64748B"),
+                   tickfont=dict(size=10, color="#374151"),
+                   gridcolor=BORDER, zeroline=True, zerolinecolor=NAVY, zerolinewidth=1.5),
+        yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+        showlegend=False,
+    )
+    lime_text = generate_lime_text(pairs, fcast, hist, sel_pid)
+    st.markdown(f"""
+    <div class='tile' style='min-height:300px'>
+      <div style='font-size:20px;font-weight:800;color:{NAVY};
+                  border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:12px'>
+        Local Explainability (LIME)
+      </div>
+      <p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px'>{lime_text}</p>
+      <div style='font-size:12px;font-weight:700;color:#94A3B8;
+                  letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px'>
+        Top Local Feature Contributions (LIME)
+      </div>
+    </div>""", unsafe_allow_html=True)
+    st.plotly_chart(fig_lime, use_container_width=True)
+
 # UPLOAD ROW
-uL, uM, uR, uRR = st.columns([2.3, 1, 1, 0.7], gap="medium")
+# The Explainability dropdown is only relevant for the black-box models
+# (XGBoost / LightGBM). EBM is intrinsically interpretable and always shows its
+# native explanation, so the toggle is hidden for it (and for Ridge / Lasso).
+# Streamlit updates keyed-widget state before re-running, so reading the model
+# choice here reflects the current selection without a one-rerun lag.
+_show_xai = st.session_state.get("model_sel", "Ridge") in ("XGBoost", "LightGBM")
+
+if _show_xai:
+    uL, uM, uS, uXAI, uRR = st.columns([2.3, 1, 1, 0.9, 0.7], gap="medium")
+else:
+    uL, uM, uS, uRR = st.columns([2.3, 1, 1, 0.7], gap="medium")
+    uXAI = None
+
 with uL:
     uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
 with uM:
-    model_type_sel = st.selectbox("Model", ["Ridge", "Lasso", "XGBoost", "EBM", "LightGBM"], index=0)
-with uR:
+    model_type_sel = st.selectbox("Model", ["Ridge", "Lasso", "XGBoost", "EBM", "LightGBM"],
+                                  key="model_sel")
+with uS:
     sales_col_sel = None
     info = {}
     if uploaded:
@@ -353,6 +399,15 @@ with uR:
             "Sales column", opts,
             index=opts.index(info["sales_col"]) if info.get("sales_col") in opts else 0
         )
+if uXAI is not None:
+    with uXAI:
+        xai_toggle = st.selectbox("Explainability", ["SHAP", "LIME"],
+                                  help="SHAP: signed feature contributions (global). "
+                                       "LIME: local explanation of the latest prediction.")
+        st.session_state["xai_mode"] = xai_toggle
+else:
+    # No post-hoc choice for EBM (native) or the linear baselines.
+    st.session_state["xai_mode"] = "SHAP"
 with uRR:
     st.markdown("<div style='padding-top:24px'>", unsafe_allow_html=True)
     run_btn = st.button("Run", type="primary", disabled=(uploaded is None),
@@ -468,64 +523,118 @@ if st.session_state.get("results"):
 
         with xai_col:
             xai_data = pr.get("xai")
-            if xai_data and _mt in ("XGBoost", "EBM"):
-                pairs   = xai_data["pairs"]
-                top10   = pairs[:10]
-                feat_names_xai  = [FEAT_LABELS.get(f, f) for f, _ in top10][::-1]
-                xai_scores      = [float(v) for _, v in top10][::-1]
-                xai_label       = "Mean |SHAP value|" if _mt == "XGBoost" else "EBM Feature Importance"
-                imp_title       = "Top Feature Importances (SHAP)" if _mt == "XGBoost" \
-                                  else "Top Feature Importances (EBM)"
+            xai_mode = st.session_state.get("xai_mode", "SHAP")
+
+            # SHAP: signed feature contributions for XGBoost / LightGBM
+            if xai_mode == "SHAP" and xai_data and _mt in ("XGBoost", "LightGBM"):
+                pairs          = xai_data["pairs"]              # (feat, mean_abs, mean_signed)
+                top10          = sorted(pairs[:10], key=lambda x: abs(x[2]))
+                feat_names_xai = [FEAT_LABELS.get(f, f) for f, _, _ in top10]
+                xai_signed     = [float(s) for _, _, s in top10]
+                bar_colors     = [GREEN if s >= 0 else RED for s in xai_signed]
 
                 fig_xai = go.Figure(go.Bar(
-                    x=xai_scores, y=feat_names_xai,
-                    orientation="h",
-                    marker_color=BLUE,
-                    text=[f"{v:.3f}" for v in xai_scores],
-                    textposition="outside",
-                    textfont=dict(size=11, color=NAVY),
-                    cliponaxis=False,
+                    x=xai_signed, y=feat_names_xai, orientation="h",
+                    marker_color=bar_colors,
+                    text=[f"+{v:.2f}" if v >= 0 else f"{v:.2f}" for v in xai_signed],
+                    textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
                 ))
                 fig_xai.update_layout(
-                    paper_bgcolor=CARD, plot_bgcolor=CARD,
-                    height=320,
+                    paper_bgcolor=CARD, plot_bgcolor=CARD, height=320,
+                    margin=dict(l=10, r=60, t=10, b=30),
+                    xaxis=dict(title="SHAP value (impact on prediction)",
+                               title_font=dict(size=11, color="#64748B"),
+                               tickfont=dict(size=10, color="#374151"),
+                               gridcolor=BORDER, zeroline=True,
+                               zerolinecolor=NAVY, zerolinewidth=1.5),
+                    yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+                    showlegend=False,
+                )
+                xai_text = generate_shap_text(pairs, fcast, hist, sel_pid)
+                st.markdown(f"""
+                <div class='tile' style='min-height:300px'>
+                  <div style='font-size:20px;font-weight:800;color:{NAVY};
+                              border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:12px'>
+                    Explainability (SHAP)
+                  </div>
+                  <p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px'>{xai_text}</p>
+                  <div style='font-size:12px;font-weight:700;color:#94A3B8;
+                              letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px'>
+                    Top Feature Contributions (SHAP)
+                  </div>
+                </div>""", unsafe_allow_html=True)
+                st.plotly_chart(fig_xai, use_container_width=True)
+
+            # SHAP mode for EBM: show its native (glass-box) importances
+            elif xai_mode == "SHAP" and xai_data and _mt == "EBM":
+                pairs          = xai_data["pairs"]
+                top10          = pairs[:10]
+                feat_names_xai = [FEAT_LABELS.get(f, f) for f, _ in top10][::-1]
+                xai_scores     = [float(v) for _, v in top10][::-1]
+                fig_xai = go.Figure(go.Bar(
+                    x=xai_scores, y=feat_names_xai, orientation="h", marker_color=BLUE,
+                    text=[f"{v:.3f}" for v in xai_scores],
+                    textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
+                ))
+                fig_xai.update_layout(
+                    paper_bgcolor=CARD, plot_bgcolor=CARD, height=320,
                     margin=dict(l=10, r=50, t=10, b=30),
-                    xaxis=dict(title=xai_label,
+                    xaxis=dict(title="EBM feature importance",
                                title_font=dict(size=11, color="#64748B"),
                                tickfont=dict(size=10, color="#374151"),
                                gridcolor=BORDER, zeroline=False),
                     yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
                     showlegend=False,
                 )
-
                 xai_text = generate_shap_text(pairs, fcast, hist, sel_pid)
-
                 st.markdown(f"""
                 <div class='tile' style='min-height:300px'>
                   <div style='font-size:20px;font-weight:800;color:{NAVY};
-                              border-bottom:2px solid {BORDER};padding-bottom:10px;
-                              margin-bottom:12px'>
-                    Explainability
+                              border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:12px'>
+                    Explainability (EBM)
                   </div>
-                  <p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px'>
-                    {xai_text}
-                  </p>
+                  <p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px'>{xai_text}</p>
                   <div style='font-size:12px;font-weight:700;color:#94A3B8;
                               letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px'>
-                    {imp_title}
+                    Top Feature Importances (EBM)
                   </div>
                 </div>""", unsafe_allow_html=True)
                 st.plotly_chart(fig_xai, use_container_width=True)
+
+            # LIME: local explanation for the latest prediction (XGBoost / LightGBM)
+            elif xai_mode == "LIME" and _mt in ("XGBoost", "LightGBM"):
+                with st.spinner("Computing LIME explanation..."):
+                    try:
+                        mdl_sel   = pr.get("model")
+                        fcols_sel = pr.get("fcols")
+                        avail     = [c for c in fcols_sel if c in hist.columns]
+                        last_row  = hist[avail].iloc[[-1]]
+                        lime_pairs = compute_lime(mdl_sel, fcols_sel, hist[avail], last_row)
+                        _render_lime_panel(lime_pairs, fcast, hist, sel_pid)
+                    except Exception as e:
+                        st.warning(f"LIME could not be computed: {e}")
+
+            elif xai_mode == "LIME" and _mt == "EBM":
+                st.markdown(f"""
+                <div class='tile' style='min-height:300px'>
+                  <div style='font-size:20px;font-weight:800;color:{NAVY};
+                              border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:10px'>
+                    Explainability
+                  </div>
+                  <p style='font-size:12px;color:#94A3B8;margin-top:8px'>
+                    EBM is already a glass-box model, use <b>SHAP</b> mode to see its built-in explanations.
+                  </p>
+                </div>""", unsafe_allow_html=True)
+
             else:
                 st.markdown(f"""
                 <div class='tile' style='min-height:300px'>
                   <div style='font-size:20px;font-weight:800;color:{NAVY};
-                              border-bottom:2px solid {BORDER};padding-bottom:10px;
-                              margin-bottom:10px'>
+                              border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:10px'>
                     Explainability
                   </div>
                   <p style='font-size:12px;color:#94A3B8;margin-top:8px'>
-                    Select <b>XGBoost</b> or <b>EBM</b> as the model and re-run to see explanations.
+                    Select <b>XGBoost</b>, <b>EBM</b>, or <b>LightGBM</b> and re-run to see explanations.
                   </p>
                 </div>""", unsafe_allow_html=True)
 

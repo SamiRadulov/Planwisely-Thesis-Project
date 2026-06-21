@@ -5,6 +5,7 @@ scikit-learn>=1.4.0
 matplotlib>=3.8.0
 plotly>=5.20.0
 xgboost>=2.0.0
+lightgbm>=4.0.0
 shap>=0.45.0
 lime>=0.2.0.1
 interpret>=0.6.0
