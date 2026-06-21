@@ -271,6 +271,59 @@ def forecast_4(model, fcols, df):
         rows.append(r)
     return pd.DataFrame(rows)
 
+
+def _contribs(mdl, fcols, model_type, rows):
+    """Summed per-feature contribution over `rows` for the given model."""
+    if model_type == "EBM":
+        var, reg = mdl.named_steps["var"], mdl.named_steps["reg"]
+        Xv  = var.transform(rows[fcols])
+        loc = reg.explain_local(Xv, reg.predict(Xv))
+        agg = {}
+        for i in range(len(rows)):
+            d = loc.data(i)
+            for nm, sc in zip(d["names"], d["scores"]):
+                if nm in fcols:
+                    agg[nm] = agg.get(nm, 0.0) + float(sc)
+        return agg
+    from shap_utils import compute_shap_lightgbm
+    fn = compute_shap if model_type == "XGBoost" else compute_shap_lightgbm
+    _, vals, kept = fn(mdl, fcols, rows)
+    return dict(zip(kept, np.asarray(vals).sum(axis=0).tolist()))
+
+
+def vs_last_year(mdl, fcols, model_type, feat, fcast):
+    """Compare the 4-period forecast with the same ISO weeks one year earlier and
+    decompose the change into per-feature contribution deltas (tree/EBM models)."""
+    h = feat.copy()
+    iso = h["date"].dt.isocalendar()
+    h["iy"], h["iw"] = iso.year.astype(int), iso.week.astype(int)
+    key2idx = {}
+    for idx, iy, iw in zip(h.index, h["iy"], h["iw"]):
+        key2idx[(int(iy), int(iw))] = idx
+    fc = fcast.copy()
+    fiso = fc["date"].dt.isocalendar()
+    fc["iy"], fc["iw"] = fiso.year.astype(int), fiso.week.astype(int)
+    keep_fc, ly_ix = [], []
+    for idx, iy, iw in zip(fc.index, fc["iy"], fc["iw"]):
+        k = (int(iy) - 1, int(iw))
+        if k in key2idx:
+            keep_fc.append(idx); ly_ix.append(key2idx[k])
+    if not ly_ix:
+        return None
+    fc_rows, ly_rows = fc.loc[keep_fc], h.loc[ly_ix]
+    fc_total = float(fc_rows["forecast"].sum())
+    ly_total = float(ly_rows["sales"].sum())
+    change_pct = (fc_total - ly_total) / ly_total * 100 if ly_total else 0.0
+    drivers = None
+    if model_type in ("XGBoost", "LightGBM", "EBM"):
+        cf = _contribs(mdl, fcols, model_type, fc_rows)
+        cl = _contribs(mdl, fcols, model_type, ly_rows)
+        delta = {f: cf.get(f, 0.0) - cl.get(f, 0.0) for f in set(cf) | set(cl)}
+        drivers = sorted(delta.items(), key=lambda kv: -abs(kv[1]))[:8]
+    return {"fc_total": fc_total, "ly_total": ly_total,
+            "change_pct": change_pct, "n_matched": len(ly_ix), "drivers": drivers}
+
+
 @st.cache_data(show_spinner=False)
 def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
             day_col, product_col, model_type):
@@ -302,7 +355,9 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
             continue
         mdl, fcols = train_model(feat, model_type)
         fcast      = forecast_4(mdl, fcols, feat)
-        r2_val     = float(r2_score(feat["sales"], mdl.predict(feat[fcols])))
+        preds      = mdl.predict(feat[fcols])
+        feat["fitted"] = preds                       # in-sample model fit, for the chart overlay
+        r2_val     = float(r2_score(feat["sales"], preds))
         imp        = get_feature_importance(mdl, fcols)
         xai_data = None
         if model_type in ("XGBoost", "LightGBM"):
@@ -319,9 +374,11 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
                         "vals": shap_vals, "kept": shap_kept}
         elif model_type == "EBM":
             xai_data = {"type": "ebm", "pairs": list(imp)}
+        vly = vs_last_year(mdl, fcols, model_type, feat, fcast)
         out[pid if pid is not None else "all"] = {
             "history": feat, "forecast": fcast,
             "importance": imp, "r2": r2_val, "xai": xai_data,
+            "vs_last_year": vly,
         }
     return out
 
@@ -376,6 +433,50 @@ def _render_lime_panel(pairs, fcast, hist, sel_pid):
       </div>
     </div>""", unsafe_allow_html=True)
     st.plotly_chart(fig_lime, use_container_width=True)
+
+def _render_vs_last_year(vly):
+    """Render the 'forecast vs same weeks last year' tile + change-driver bar."""
+    pct   = vly["change_pct"]
+    color = GREEN if pct >= 0 else RED
+    word  = "higher" if pct >= 0 else "lower"
+    drivers = vly.get("drivers")
+    drv_label = ("<div style='font-size:12px;font-weight:700;color:#94A3B8;"
+                 "letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px'>"
+                 "What's driving the change</div>") if drivers else ""
+    st.markdown(f"""
+    <div class='tile' style='margin-top:14px'>
+      <div style='font-size:18px;font-weight:800;color:{NAVY};
+                  border-bottom:2px solid {BORDER};padding-bottom:8px;margin-bottom:10px'>
+        Forecast vs last year
+      </div>
+      <p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:12px'>
+        The next 4 periods are forecast at <b>{vly['fc_total']:,.0f}</b> units versus
+        <b>{vly['ly_total']:,.0f}</b> in the same weeks last year, i.e.
+        <b style='color:{color}'>{abs(pct):.1f}% {word}</b>.
+      </p>
+      {drv_label}
+    </div>""", unsafe_allow_html=True)
+    if drivers:
+        top    = sorted(drivers, key=lambda kv: abs(kv[1]))[-6:]
+        labels = [FEAT_LABELS.get(f, f) for f, _ in top]
+        vals   = [v for _, v in top]
+        colors = [GREEN if v >= 0 else RED for v in vals]
+        fig = go.Figure(go.Bar(
+            x=vals, y=labels, orientation="h", marker_color=colors,
+            text=[f"+{v:.1f}" if v >= 0 else f"{v:.1f}" for v in vals],
+            textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
+        ))
+        fig.update_layout(
+            paper_bgcolor=CARD, plot_bgcolor=CARD, height=260,
+            margin=dict(l=10, r=60, t=6, b=24),
+            xaxis=dict(title="Contribution to the change vs last year",
+                       title_font=dict(size=11, color="#64748B"),
+                       tickfont=dict(size=10, color="#374151"),
+                       gridcolor=BORDER, zeroline=True, zerolinecolor=NAVY, zerolinewidth=1.5),
+            yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+            showlegend=False,
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 # UPLOAD ROW
 # Fixed 5-column layout so the row never changes shape between reruns. A changing
@@ -512,7 +613,10 @@ if st.session_state.get("results"):
         with chart_col:
             fig2, ax2 = white_ax((9, 3.8))
             tail = hist.tail(52)
-            ax2.plot(tail["date"], tail["sales"], color=NAVY, lw=1.8, label="Historical", zorder=3)
+            ax2.plot(tail["date"], tail["sales"], color=NAVY, lw=1.8, label="Actual sales", zorder=3)
+            if "fitted" in tail.columns:
+                ax2.plot(tail["date"], tail["fitted"], color=GREEN, lw=1.5,
+                         linestyle="--", label="Model fit (in-sample)", zorder=3.5)
             ax2.plot(fcast["date"], fcast["forecast"], color=BLUE, lw=2.2,
                      marker="o", markersize=5, label="Forecast", zorder=4)
             ax2.fill_between(fcast["date"],
@@ -644,6 +748,10 @@ if st.session_state.get("results"):
                     Select <b>XGBoost</b>, <b>EBM</b>, or <b>LightGBM</b> and re-run to see explanations.
                   </p>
                 </div>""", unsafe_allow_html=True)
+
+            vly = pr.get("vs_last_year")
+            if vly:
+                _render_vs_last_year(vly)
 
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
