@@ -40,7 +40,31 @@ EXT_COLS = (
     (COVID_COLS   if HAS_COVID   else []) +
     (SCHOOL_COLS  if HAS_SCHOOL  else [])
 )
-FCOLS = FCOLS_BASE + EXT_COLS
+FCOLS = FCOLS_BASE + EXT_COLS          # the full set (everything available)
+
+# ── Per-model feature sets ───────────────────────────────────────────────────
+# Each model trains on its OWN feature list, looked up from MODEL_FCOLS below.
+# The whole team is on the reduced set for now; to use a different set for your
+# model, change its entry (see how_to_change_feature_set.md). Any feature listed
+# that isn't present in the engineered data is skipped automatically, so listing
+# extras (e.g. lockdown_days when the COVID file is absent) is harmless.
+
+REDUCED_FCOLS = [
+    "lag_1", "lag_2", "lag_4", "lag_8",
+    "rolling_mean_4", "rolling_mean_8", "rolling_std_4", "rolling_std_8",
+    "week_of_year", "week_cos",
+    "hol_easter", "hol_kings_day", "hol_pentecost", "hol_christmas",
+    "temp_mean", "precip_sum", "sunshine_sum",
+    "lockdown_days", "school_holiday",   # only used if the COVID/school data is present
+]
+
+MODEL_FCOLS = {
+    "Ridge":    REDUCED_FCOLS,
+    "Lasso":    REDUCED_FCOLS,
+    "XGBoost":  REDUCED_FCOLS,
+    "EBM":      REDUCED_FCOLS,
+    "LightGBM": REDUCED_FCOLS,
+}
 
 # ── Human-readable feature labels ────────────────────────────────────────────
 
@@ -133,13 +157,16 @@ def train_model(df, model_type="Ridge"):
     Parameters
     ----------
     df         : DataFrame output of build_features(), must contain 'sales'
-    model_type : one of 'Ridge', 'Lasso', 'XGBoost', 'EBM'
+    model_type : one of 'Ridge', 'Lasso', 'XGBoost', 'EBM', 'LightGBM'
 
     Returns
     -------
-    (model, fcols) — fitted Pipeline and list of feature columns used
+    (model, fcols) — fitted Pipeline and list of feature columns used.
+    Each model uses its own feature list from MODEL_FCOLS (falls back to the
+    full FCOLS); any listed feature not present in df is skipped.
     """
-    fcols = [c for c in FCOLS if c in df.columns]
+    wanted = MODEL_FCOLS.get(model_type, FCOLS)
+    fcols  = [c for c in wanted if c in df.columns]
     model = _BUILDERS[model_type]()
     model.fit(df[fcols], df["sales"])
     return model, fcols
