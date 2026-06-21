@@ -119,6 +119,16 @@ st.markdown(f"""
       background:{CARD}; border-radius:12px;
       padding:18px 22px; border:1px solid {BORDER}; height:100%;
   }}
+
+  /* Make Streamlit bordered containers look like the previous white cards.
+     Without this, st.container(border=True) inherits the navy app background,
+     which makes dark text unreadable. */
+  div[data-testid="stVerticalBlockBorderWrapper"] {{
+      background:{CARD} !important;
+      border:1px solid {BORDER} !important;
+      border-radius:12px !important;
+      padding:18px 22px !important;
+  }}
   .tile-label {{
       font-size:12px; font-weight:700; letter-spacing:.12em;
       text-transform:uppercase; color:#94A3B8; margin-bottom:2px;
@@ -407,89 +417,132 @@ def arrow(pc):
     if pc < -5: return f"<span style='color:{RED};font-weight:800'>down</span>"
     return             f"<span style='color:{AMBER};font-weight:800'>flat</span>"
 
-def _xai_header(title, text, label):
-    """Inner HTML for an explanation card (rendered inside a bordered container)."""
-    return (f"<div style='font-size:20px;font-weight:800;color:{NAVY};"
-            f"border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:10px'>{title}</div>"
-            f"<p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:8px'>{text}</p>"
-            f"<div style='font-size:12px;font-weight:700;color:#94A3B8;"
-            f"letter-spacing:.1em;text-transform:uppercase'>{label}</div>")
+def _xai_header(title, body_text, subtitle):
+    """Readable XAI header/body shown on the navy dashboard background."""
+    return f"""
+      <div style='font-size:22px;font-weight:800;color:#FFFFFF;
+                  border-bottom:2px solid rgba(255,255,255,0.85);
+                  padding-bottom:10px;margin-bottom:14px'>
+        {title}
+      </div>
+      <p style='font-size:15px;color:rgba(255,255,255,0.92);
+                line-height:1.75;margin-bottom:18px'>
+        {body_text}
+      </p>
+      <div style='font-size:13px;font-weight:800;color:#CBD5E1;
+                  letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px'>
+        {subtitle}
+      </div>"""
 
 def _render_lime_panel(pairs, fcast, hist, sel_pid):
-    """Render the LIME local-explanation card (text + bar) in one bordered box."""
+    """Render the LIME local-explanation bar chart and text for one prediction."""
     labels  = [p[0] for p in pairs[:10]]
     weights = [p[1] for p in pairs[:10]]
     colors  = [GREEN if w >= 0 else RED for w in weights]
     fig_lime = go.Figure(go.Bar(
         x=weights, y=labels, orientation="h", marker_color=colors,
         text=[f"+{v:.2f}" if v >= 0 else f"{v:.2f}" for v in weights],
-        textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
+        textposition="outside", textfont=dict(size=12, color=NAVY), cliponaxis=False,
     ))
     fig_lime.update_layout(
-        paper_bgcolor=CARD, plot_bgcolor=CARD, height=300,
-        margin=dict(l=10, r=60, t=6, b=28),
+        paper_bgcolor=CARD, plot_bgcolor=CARD, height=320,
+        margin=dict(l=10, r=60, t=10, b=30),
         xaxis=dict(title="LIME weight (impact on prediction)",
-                   title_font=dict(size=11, color="#64748B"),
-                   tickfont=dict(size=10, color="#374151"),
+                   title_font=dict(size=12, color="#64748B"),
+                   tickfont=dict(size=11, color="#374151"),
                    gridcolor=BORDER, zeroline=True, zerolinecolor=NAVY, zerolinewidth=1.5),
-        yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+        yaxis=dict(tickfont=dict(size=12, color=NAVY), showgrid=False),
         showlegend=False,
     )
     lime_text = generate_lime_text(pairs, fcast, hist, sel_pid)
-    with st.container(border=True):
-        st.markdown(_xai_header("Local Explainability (LIME)", lime_text,
-                                "Top Local Feature Contributions (LIME)"), unsafe_allow_html=True)
-        st.plotly_chart(fig_lime, use_container_width=True)
+    st.markdown(f"""
+      <div style='font-size:22px;font-weight:800;color:#FFFFFF;
+                  border-bottom:2px solid rgba(255,255,255,0.85);
+                  padding-bottom:10px;margin-bottom:14px'>
+        Local Explainability (LIME)
+      </div>
+      <p style='font-size:15px;color:rgba(255,255,255,0.92);
+                line-height:1.75;margin-bottom:18px'>{lime_text}</p>
+      <div style='font-size:13px;font-weight:800;color:#CBD5E1;
+                  letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px'>
+        Top Local Feature Contributions (LIME)
+      </div>""", unsafe_allow_html=True)
+    st.plotly_chart(fig_lime, use_container_width=True)
 
 def _render_vs_last_year(vly, drivers=None):
-    """Render the 'forecast vs same weeks last year' card (text + change-driver bar)."""
+    """Render the 'forecast vs same weeks last year' text + optional change-driver bar."""
+
+    title_html = (
+        "<div style='font-size:18px;font-weight:800;color:#fff;"
+        "border-bottom:1px solid rgba(255,255,255,0.85);"
+        "padding-bottom:10px;margin-bottom:12px'>"
+        "Prediction vs last year</div>"
+    )
+
     if vly.get("no_data"):
-        with st.container(border=True):
-            st.markdown(
-                f"<div style='font-size:18px;font-weight:800;color:{NAVY};"
-                f"border-bottom:2px solid {BORDER};padding-bottom:8px;margin-bottom:10px'>"
-                f"Forecast vs last year</div>"
-                f"<p style='font-size:13px;color:#94A3B8;line-height:1.6'>"
-                f"No recorded sales for the same period last year, so a year-over-year "
-                f"comparison isn't available for this product.</p>",
-                unsafe_allow_html=True)
+        st.markdown(
+            "<hr class='div'>"
+            + title_html +
+            "<p style='font-size:15px;color:rgba(255,255,255,0.92);"
+            "line-height:1.75;margin-bottom:18px'>"
+            "No recorded sales for the same period last year, so a year-over-year "
+            "comparison isn’t available for this product.</p>",
+            unsafe_allow_html=True
+        )
         return
+
     pct   = vly["change_pct"]
     color = GREEN if pct >= 0 else RED
     word  = "higher" if pct >= 0 else "lower"
-    drv_label = ("<div style='font-size:12px;font-weight:700;color:#94A3B8;"
-                 "letter-spacing:.1em;text-transform:uppercase'>"
-                 "What's driving the change</div>") if drivers else ""
-    body = (f"<div style='font-size:18px;font-weight:800;color:{NAVY};"
-            f"border-bottom:2px solid {BORDER};padding-bottom:8px;margin-bottom:10px'>"
-            f"Forecast vs last year</div>"
-            f"<p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:10px'>"
-            f"The next 4 periods are forecast at <b>{vly['fc_total']:,.0f}</b> units versus "
-            f"<b>{vly['ly_total']:,.0f}</b> in the same weeks last year, i.e. "
-            f"<b style='color:{color}'>{abs(pct):.1f}% {word}</b>.</p>{drv_label}")
-    with st.container(border=True):
-        st.markdown(body, unsafe_allow_html=True)
-        if drivers:
-            top    = sorted(drivers, key=lambda kv: abs(kv[1]))[-6:]
-            labels = [FEAT_LABELS.get(f, f) for f, _ in top]
-            vals   = [v for _, v in top]
-            colors = [GREEN if v >= 0 else RED for v in vals]
-            fig = go.Figure(go.Bar(
-                x=vals, y=labels, orientation="h", marker_color=colors,
-                text=[f"+{v:.1f}" if v >= 0 else f"{v:.1f}" for v in vals],
-                textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
-            ))
-            fig.update_layout(
-                paper_bgcolor=CARD, plot_bgcolor=CARD, height=260,
-                margin=dict(l=10, r=60, t=6, b=24),
-                xaxis=dict(title="Contribution to the change vs last year",
-                           title_font=dict(size=11, color="#64748B"),
-                           tickfont=dict(size=10, color="#374151"),
-                           gridcolor=BORDER, zeroline=True, zerolinecolor=NAVY, zerolinewidth=1.5),
-                yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
-                showlegend=False,
-            )
-            st.plotly_chart(fig, use_container_width=True)
+
+    drv_label = (
+        "<div style='font-size:13px;font-weight:800;color:#CBD5E1;"
+        "letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px'>"
+        "What’s driving the change</div>"
+    ) if drivers else ""
+
+    st.markdown(
+        "<hr class='div'>"
+        + title_html +
+        f"<p style='font-size:15px;color:rgba(255,255,255,0.92);"
+        f"line-height:1.75;margin-bottom:18px'>"
+        f"The next 4 periods are forecast at <b>{vly['fc_total']:,.0f}</b> units versus "
+        f"<b>{vly['ly_total']:,.0f}</b> in the same weeks last year, i.e. "
+        f"<b style='color:{color}'>{abs(pct):.1f}% {word}</b>.</p>"
+        f"{drv_label}",
+        unsafe_allow_html=True
+    )
+
+    if drivers:
+        top    = sorted(drivers, key=lambda kv: abs(kv[1]))[-6:]
+        labels = [FEAT_LABELS.get(f, f) for f, _ in top]
+        vals   = [v for _, v in top]
+        colors = [GREEN if v >= 0 else RED for v in vals]
+
+        fig = go.Figure(go.Bar(
+            x=vals, y=labels, orientation="h", marker_color=colors,
+            text=[f"+{v:.1f}" if v >= 0 else f"{v:.1f}" for v in vals],
+            textposition="outside", textfont=dict(size=12, color=NAVY),
+            cliponaxis=False,
+        ))
+
+        fig.update_layout(
+            paper_bgcolor=CARD, plot_bgcolor=CARD, height=260,
+            margin=dict(l=10, r=60, t=6, b=24),
+            xaxis=dict(
+                title="Contribution to the change vs last year",
+                title_font=dict(size=12, color="#64748B"),
+                tickfont=dict(size=11, color="#374151"),
+                gridcolor=BORDER,
+                zeroline=True,
+                zerolinecolor=NAVY,
+                zerolinewidth=1.5
+            ),
+            yaxis=dict(tickfont=dict(size=12, color=NAVY), showgrid=False),
+            showlegend=False,
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
 
 # UPLOAD ROW
 # Fixed 5-column layout so the row never changes shape between reruns. A changing
@@ -626,8 +679,10 @@ if st.session_state.get("results"):
         with chart_col:
             with st.container(border=True):
                 st.markdown(
-                    f"<div style='font-size:16px;font-weight:800;color:{NAVY};"
-                    f"margin-bottom:4px'>Sales history &amp; 4-period forecast</div>",
+                    "<div style='font-size:18px;font-weight:800;color:#fff;"
+                    "border-bottom:1px solid rgba(255,255,255,0.85);"
+                    "padding-bottom:10px;margin-bottom:12px'>"
+                    "Sales history &amp; 4-period forecast</div>",
                     unsafe_allow_html=True)
                 fig2, ax2 = white_ax((9, 4.7))
                 tail = hist.tail(52)
@@ -665,24 +720,23 @@ if st.session_state.get("results"):
                     x=xai_signed, y=feat_names_xai, orientation="h",
                     marker_color=bar_colors,
                     text=[f"+{v:.2f}" if v >= 0 else f"{v:.2f}" for v in xai_signed],
-                    textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
+                    textposition="outside", textfont=dict(size=12, color=NAVY), cliponaxis=False,
                 ))
                 fig_xai.update_layout(
                     paper_bgcolor=CARD, plot_bgcolor=CARD, height=320,
                     margin=dict(l=10, r=60, t=10, b=30),
                     xaxis=dict(title="SHAP value (impact on prediction)",
-                               title_font=dict(size=11, color="#64748B"),
-                               tickfont=dict(size=10, color="#374151"),
+                               title_font=dict(size=12, color="#64748B"),
+                               tickfont=dict(size=11, color="#374151"),
                                gridcolor=BORDER, zeroline=True,
                                zerolinecolor=NAVY, zerolinewidth=1.5),
-                    yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+                    yaxis=dict(tickfont=dict(size=12, color=NAVY), showgrid=False),
                     showlegend=False,
                 )
                 xai_text = generate_shap_text(pairs, fcast, hist, sel_pid)
-                with st.container(border=True):
-                    st.markdown(_xai_header("Explainability (SHAP)", xai_text,
-                                            "Top Feature Contributions (SHAP)"), unsafe_allow_html=True)
-                    st.plotly_chart(fig_xai, use_container_width=True)
+                st.markdown(_xai_header("Explainability (SHAP)", xai_text,
+                                        "Top Feature Contributions (SHAP)"), unsafe_allow_html=True)
+                st.plotly_chart(fig_xai, use_container_width=True)
 
             # SHAP mode for EBM: show its native (glass-box) importances
             elif xai_mode == "SHAP" and xai_data and _mt == "EBM":
@@ -693,23 +747,22 @@ if st.session_state.get("results"):
                 fig_xai = go.Figure(go.Bar(
                     x=xai_scores, y=feat_names_xai, orientation="h", marker_color=BLUE,
                     text=[f"{v:.3f}" for v in xai_scores],
-                    textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
+                    textposition="outside", textfont=dict(size=12, color=NAVY), cliponaxis=False,
                 ))
                 fig_xai.update_layout(
                     paper_bgcolor=CARD, plot_bgcolor=CARD, height=320,
                     margin=dict(l=10, r=50, t=10, b=30),
                     xaxis=dict(title="EBM feature importance",
-                               title_font=dict(size=11, color="#64748B"),
-                               tickfont=dict(size=10, color="#374151"),
+                               title_font=dict(size=12, color="#64748B"),
+                               tickfont=dict(size=11, color="#374151"),
                                gridcolor=BORDER, zeroline=False),
-                    yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+                    yaxis=dict(tickfont=dict(size=12, color=NAVY), showgrid=False),
                     showlegend=False,
                 )
                 xai_text = generate_shap_text(pairs, fcast, hist, sel_pid)
-                with st.container(border=True):
-                    st.markdown(_xai_header("Explainability (EBM)", xai_text,
-                                            "Top Feature Importances (EBM)"), unsafe_allow_html=True)
-                    st.plotly_chart(fig_xai, use_container_width=True)
+                st.markdown(_xai_header("Explainability (EBM)", xai_text,
+                                        "Top Feature Importances (EBM)"), unsafe_allow_html=True)
+                st.plotly_chart(fig_xai, use_container_width=True)
 
             # LIME: local explanation for the latest prediction (XGBoost / LightGBM)
             elif xai_mode == "LIME" and _mt in ("XGBoost", "LightGBM"):
@@ -731,7 +784,7 @@ if st.session_state.get("results"):
                       <div style='font-size:20px;font-weight:800;color:{NAVY};
                                   border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:8px'>
                         Explainability</div>
-                      <p style='font-size:12px;color:#94A3B8;margin-top:4px'>
+                      <p style='font-size:13px;color:#64748B;margin-top:4px;line-height:1.6'>
                         EBM is already a glass-box model, use <b>SHAP</b> mode to see its built-in explanations.
                       </p>""", unsafe_allow_html=True)
 
@@ -741,7 +794,7 @@ if st.session_state.get("results"):
                       <div style='font-size:20px;font-weight:800;color:{NAVY};
                                   border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:8px'>
                         Explainability</div>
-                      <p style='font-size:12px;color:#94A3B8;margin-top:4px'>
+                      <p style='font-size:13px;color:#64748B;margin-top:4px;line-height:1.6'>
                         Select <b>XGBoost</b>, <b>EBM</b>, or <b>LightGBM</b> and re-run to see explanations.
                       </p>""", unsafe_allow_html=True)
 
