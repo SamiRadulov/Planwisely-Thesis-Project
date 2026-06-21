@@ -278,17 +278,26 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
     info = dict(date_mode=date_mode, date_col=date_col, year_col=year_col,
                 month_col=month_col, day_col=day_col, product_col=product_col)
     out  = {}
-    pids = (
-        [None] if product_col is None
-        else df.groupby(product_col)
-               .filter(lambda x: len(x) >= 20)[product_col]
-               .unique().tolist()
-    )
+    pids = [None] if product_col is None else df[product_col].unique().tolist()
     for pid in pids:
         sub          = (df if pid is None else df[df[product_col] == pid]).copy()
         sub["date"]  = build_date_series(sub, info)
         sub["sales"] = pd.to_numeric(sub[sales_col], errors="coerce")
-        feat         = build_features(sub[["date", "sales"]].dropna())
+        sub          = sub[["date", "sales"]].dropna().sort_values("date")
+
+        # Match the thesis preprocessing: keep only products with at least 52
+        # weeks of actual history (~114 products), and aggregate the series to
+        # weekly demand so the dashboard forecasts weekly regardless of whether
+        # the uploaded file is daily or weekly.
+        if sub["date"].dt.to_period("W").nunique() < 52:
+            continue
+        # Aggregate to one row per active week (sum within the ISO week). We do
+        # not zero-fill empty weeks: that matches the thesis weekly series
+        # (~110 weeks/product) and keeps EBM training fast.
+        sub["_wk"] = sub["date"].dt.to_period("W").dt.start_time
+        wk   = (sub.groupby("_wk", as_index=False)["sales"].sum()
+                   .rename(columns={"_wk": "date"}))
+        feat = build_features(wk)
         if len(feat) < 20:
             continue
         mdl, fcols = train_model(feat, model_type)
@@ -313,7 +322,6 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
         out[pid if pid is not None else "all"] = {
             "history": feat, "forecast": fcast,
             "importance": imp, "r2": r2_val, "xai": xai_data,
-            "model": mdl, "fcols": fcols,
         }
     return out
 
@@ -370,18 +378,12 @@ def _render_lime_panel(pairs, fcast, hist, sel_pid):
     st.plotly_chart(fig_lime, use_container_width=True)
 
 # UPLOAD ROW
-# The Explainability dropdown is only relevant for the black-box models
-# (XGBoost / LightGBM). EBM is intrinsically interpretable and always shows its
-# native explanation, so the toggle is hidden for it (and for Ridge / Lasso).
-# Streamlit updates keyed-widget state before re-running, so reading the model
-# choice here reflects the current selection without a one-rerun lag.
-_show_xai = st.session_state.get("model_sel", "Ridge") in ("XGBoost", "LightGBM")
-
-if _show_xai:
-    uL, uM, uS, uXAI, uRR = st.columns([2.3, 1, 1, 0.9, 0.7], gap="medium")
-else:
-    uL, uM, uS, uRR = st.columns([2.3, 1, 1, 0.7], gap="medium")
-    uXAI = None
+# Fixed 5-column layout so the row never changes shape between reruns. A changing
+# column count made Streamlit leave a half-transparent "ghost" Run button behind
+# when switching models. The Explainability dropdown renders only for the
+# black-box models (XGBoost / LightGBM); for EBM (native) and the linear
+# baselines its slot is simply left empty.
+uL, uM, uS, uXAI, uRR = st.columns([2.3, 1, 1, 0.9, 0.7], gap="medium")
 
 with uL:
     uploaded = st.file_uploader("Upload sales CSV", type=["csv"], label_visibility="visible")
@@ -399,15 +401,15 @@ with uS:
             "Sales column", opts,
             index=opts.index(info["sales_col"]) if info.get("sales_col") in opts else 0
         )
-if uXAI is not None:
-    with uXAI:
+with uXAI:
+    if model_type_sel in ("XGBoost", "LightGBM"):
         xai_toggle = st.selectbox("Explainability", ["SHAP", "LIME"],
                                   help="SHAP: signed feature contributions (global). "
                                        "LIME: local explanation of the latest prediction.")
         st.session_state["xai_mode"] = xai_toggle
-else:
-    # No post-hoc choice for EBM (native) or the linear baselines.
-    st.session_state["xai_mode"] = "SHAP"
+    else:
+        # EBM (native) and the linear baselines have no post-hoc choice.
+        st.session_state["xai_mode"] = "SHAP"
 with uRR:
     st.markdown("<div style='padding-top:24px'>", unsafe_allow_html=True)
     run_btn = st.button("Run", type="primary", disabled=(uploaded is None),
@@ -462,7 +464,11 @@ if st.session_state.get("results"):
     # SECTION 1 — PRODUCT DETAIL
     st.markdown("<div class='sec-head'>Product Detail</div>", unsafe_allow_html=True)
 
-    all_pids = sorted(results.keys(), key=lambda x: str(x))
+    all_pids = sorted(
+        results.keys(),
+        key=lambda x: (float(x) if str(x).lstrip("-").replace(".", "", 1).isdigit()
+                       else float("inf"), str(x)),
+    )
     sel_pid  = st.selectbox("Select a product", options=all_pids,
                             format_func=lambda x: f"Product {x}")
 
@@ -605,10 +611,11 @@ if st.session_state.get("results"):
             elif xai_mode == "LIME" and _mt in ("XGBoost", "LightGBM"):
                 with st.spinner("Computing LIME explanation..."):
                     try:
-                        mdl_sel   = pr.get("model")
-                        fcols_sel = pr.get("fcols")
-                        avail     = [c for c in fcols_sel if c in hist.columns]
-                        last_row  = hist[avail].iloc[[-1]]
+                        # Retrain just this product's model on the fly (fast for
+                        # tree models) so we don't have to cache every model.
+                        mdl_sel, fcols_sel = train_model(hist, _mt)
+                        avail      = [c for c in fcols_sel if c in hist.columns]
+                        last_row   = hist[avail].iloc[[-1]]
                         lime_pairs = compute_lime(mdl_sel, fcols_sel, hist[avail], last_row)
                         _render_lime_panel(lime_pairs, fcast, hist, sel_pid)
                     except Exception as e:
@@ -773,42 +780,47 @@ if st.session_state.get("results"):
         </div>""", unsafe_allow_html=True)
 
     with r2c2:
-        p_changes = [None] + [
-            (period_tots[i] - period_tots[i-1]) / period_tots[i-1] * 100
-            for i in range(1, 4)
-        ]
+        # Period 0 = the last actually observed period (summed across products),
+        # used as the baseline so every forecast period (P1-P4) has a comparison.
+        period0_tot = sum(r["history"]["sales"].iloc[-1] for r in results.values())
+        traj_tots   = [period0_tot, *period_tots]
+        traj_labels = ["Period 0 (observed)", "Period 1", "Period 2", "Period 3", "Period 4"]
+
         rows_pt = ""
-        for i, (v, ch) in enumerate(zip(period_tots, p_changes)):
-            chg_html = ("<span style='color:#94A3B8;font-size:10px'>baseline</span>"
-                        if ch is None else badge(ch))
+        for i, v in enumerate(traj_tots):
+            if i == 0:
+                chg_html = "<span style='color:#94A3B8;font-size:10px'>baseline</span>"
+            else:
+                prev     = traj_tots[i-1]
+                ch       = (v - prev) / prev * 100 if prev else 0
+                chg_html = badge(ch)
             rows_pt += f"""
           <tr>
-            <td><b>Period {i+1}</b></td>
+            <td><b>{traj_labels[i]}</b></td>
             <td>{v:,.0f}</td>
             <td>{chg_html}</td>
           </tr>"""
 
-        p1v, p4v = period_tots[0], period_tots[3]
-        traj_pct = (p4v - p1v) / p1v * 100 if p1v else 0
+        p0v, p4v = traj_tots[0], traj_tots[-1]
+        traj_pct = (p4v - p0v) / p0v * 100 if p0v else 0
         traj_lbl = "Growing" if traj_pct > 2 else ("Declining" if traj_pct < -2 else "Flat")
         traj_cls = "b-up" if traj_pct > 2 else ("b-down" if traj_pct < -2 else "b-flat")
         tsign    = f"+{traj_pct:.1f}%" if traj_pct > 0 else f"{traj_pct:.1f}%"
 
-        # min-height set to match Biggest Movers tile (10 rows ~ 420px)
         st.markdown(f"""
         <div class='tile' style='min-height:560px'>
           <div class='tile-label'>Demand Trajectory</div>
           <div class='tile-title'>Period-by-Period Trend</div>
           <div style='margin-bottom:12px'>
             <span class='badge {traj_cls}' style='font-size:14px;padding:4px 12px'>
-              {traj_lbl} &nbsp; P1 to P4: {tsign}
+              {traj_lbl} &nbsp; P0 to P4: {tsign}
             </span>
           </div>
           <table class='tbl'>
             <tr><th>Period</th><th>Total Demand</th><th>vs Prev Period</th></tr>
             {rows_pt}
           </table>
-          <p class='note'>Compares each forecast period to the previous one across all products.</p>
+          <p class='note'>Period 0 is the last observed period; each forecast period is compared to the previous one across all products.</p>
         </div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
