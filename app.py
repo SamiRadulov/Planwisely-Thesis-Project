@@ -119,6 +119,16 @@ st.markdown(f"""
       background:{CARD}; border-radius:12px;
       padding:18px 22px; border:1px solid {BORDER}; height:100%;
   }}
+
+  /* Make Streamlit bordered containers look like the previous white cards.
+     Without this, st.container(border=True) inherits the navy app background,
+     which makes dark text unreadable. */
+  div[data-testid="stVerticalBlockBorderWrapper"] {{
+      background:{CARD} !important;
+      border:1px solid {BORDER} !important;
+      border-radius:12px !important;
+      padding:18px 22px !important;
+  }}
   .tile-label {{
       font-size:12px; font-weight:700; letter-spacing:.12em;
       text-transform:uppercase; color:#94A3B8; margin-bottom:2px;
@@ -271,6 +281,67 @@ def forecast_4(model, fcols, df):
         rows.append(r)
     return pd.DataFrame(rows)
 
+
+def _contribs(mdl, fcols, model_type, rows):
+    """Summed per-feature contribution over `rows` for the given model."""
+    if model_type == "EBM":
+        var, reg = mdl.named_steps["var"], mdl.named_steps["reg"]
+        Xv  = var.transform(rows[fcols])
+        loc = reg.explain_local(Xv, reg.predict(Xv))
+        agg = {}
+        for i in range(len(rows)):
+            d = loc.data(i)
+            for nm, sc in zip(d["names"], d["scores"]):
+                if nm in fcols:
+                    agg[nm] = agg.get(nm, 0.0) + float(sc)
+        return agg
+    from shap_utils import compute_shap_lightgbm
+    fn = compute_shap if model_type == "XGBoost" else compute_shap_lightgbm
+    _, vals, kept = fn(mdl, fcols, rows)
+    return dict(zip(kept, np.asarray(vals).sum(axis=0).tolist()))
+
+
+def vs_last_year(mdl, fcols, model_type, feat, fcast):
+    """Compare the 4-period forecast with the same ISO weeks one year earlier and
+    decompose the change into per-feature contribution deltas (tree/EBM models)."""
+    h = feat.copy()
+    iso = h["date"].dt.isocalendar()
+    h["iy"], h["iw"] = iso.year.astype(int), iso.week.astype(int)
+    key2idx = {}
+    for idx, iy, iw in zip(h.index, h["iy"], h["iw"]):
+        key2idx[(int(iy), int(iw))] = idx
+    fc = fcast.copy()
+    fiso = fc["date"].dt.isocalendar()
+    fc["iy"], fc["iw"] = fiso.year.astype(int), fiso.week.astype(int)
+    keep_fc, ly_ix = [], []
+    for idx, iy, iw in zip(fc.index, fc["iy"], fc["iw"]):
+        k = (int(iy) - 1, int(iw))
+        if k in key2idx:
+            keep_fc.append(idx); ly_ix.append(key2idx[k])
+    if not ly_ix:
+        # No matching weeks one year back (e.g. a product whose history doesn't
+        # cover the same period last year). Surface this honestly in the UI.
+        return {"no_data": True}
+    fc_rows, ly_rows = fc.loc[keep_fc], h.loc[ly_ix]
+    fc_total = float(fc_rows["forecast"].sum())
+    ly_total = float(ly_rows["sales"].sum())
+    change_pct = (fc_total - ly_total) / ly_total * 100 if ly_total else 0.0
+    out = {"no_data": False, "fc_total": fc_total, "ly_total": ly_total,
+           "change_pct": change_pct, "n_matched": len(ly_ix), "drivers": None}
+    if model_type == "EBM":
+        # EBM contributions are cheap (explain_local) and reuse the trained model,
+        # so compute the change drivers here.
+        cf = _contribs(mdl, fcols, "EBM", fc_rows)
+        cl = _contribs(mdl, fcols, "EBM", ly_rows)
+        delta = {f: cf.get(f, 0.0) - cl.get(f, 0.0) for f in set(cf) | set(cl)}
+        out["drivers"] = sorted(delta.items(), key=lambda kv: -abs(kv[1]))[:8]
+    elif model_type in ("XGBoost", "LightGBM"):
+        # SHAP is the slow part; keep the matched rows and compute the drivers on
+        # demand for the selected product only (done in the render code below).
+        out["fc_rows"], out["ly_rows"] = fc_rows, ly_rows
+    return out
+
+
 @st.cache_data(show_spinner=False)
 def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
             day_col, product_col, model_type):
@@ -302,7 +373,9 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
             continue
         mdl, fcols = train_model(feat, model_type)
         fcast      = forecast_4(mdl, fcols, feat)
-        r2_val     = float(r2_score(feat["sales"], mdl.predict(feat[fcols])))
+        preds      = mdl.predict(feat[fcols])
+        feat["fitted"] = preds                       # in-sample model fit, for the chart overlay
+        r2_val     = float(r2_score(feat["sales"], preds))
         imp        = get_feature_importance(mdl, fcols)
         xai_data = None
         if model_type in ("XGBoost", "LightGBM"):
@@ -319,9 +392,11 @@ def run_all(raw_bytes, sales_col, date_mode, date_col, year_col, month_col,
                         "vals": shap_vals, "kept": shap_kept}
         elif model_type == "EBM":
             xai_data = {"type": "ebm", "pairs": list(imp)}
+        vly = vs_last_year(mdl, fcols, model_type, feat, fcast)
         out[pid if pid is not None else "all"] = {
             "history": feat, "forecast": fcast,
             "importance": imp, "r2": r2_val, "xai": xai_data,
+            "vs_last_year": vly,
         }
     return out
 
@@ -342,6 +417,23 @@ def arrow(pc):
     if pc < -5: return f"<span style='color:{RED};font-weight:800'>down</span>"
     return             f"<span style='color:{AMBER};font-weight:800'>flat</span>"
 
+def _xai_header(title, body_text, subtitle):
+    """Readable XAI header/body shown on the navy dashboard background."""
+    return f"""
+      <div style='font-size:22px;font-weight:800;color:#FFFFFF;
+                  border-bottom:2px solid rgba(255,255,255,0.85);
+                  padding-bottom:10px;margin-bottom:14px'>
+        {title}
+      </div>
+      <p style='font-size:15px;color:rgba(255,255,255,0.92);
+                line-height:1.75;margin-bottom:18px'>
+        {body_text}
+      </p>
+      <div style='font-size:13px;font-weight:800;color:#CBD5E1;
+                  letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px'>
+        {subtitle}
+      </div>"""
+
 def _render_lime_panel(pairs, fcast, hist, sel_pid):
     """Render the LIME local-explanation bar chart and text for one prediction."""
     labels  = [p[0] for p in pairs[:10]]
@@ -350,32 +442,107 @@ def _render_lime_panel(pairs, fcast, hist, sel_pid):
     fig_lime = go.Figure(go.Bar(
         x=weights, y=labels, orientation="h", marker_color=colors,
         text=[f"+{v:.2f}" if v >= 0 else f"{v:.2f}" for v in weights],
-        textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
+        textposition="outside", textfont=dict(size=12, color=NAVY), cliponaxis=False,
     ))
     fig_lime.update_layout(
         paper_bgcolor=CARD, plot_bgcolor=CARD, height=320,
         margin=dict(l=10, r=60, t=10, b=30),
         xaxis=dict(title="LIME weight (impact on prediction)",
-                   title_font=dict(size=11, color="#64748B"),
-                   tickfont=dict(size=10, color="#374151"),
+                   title_font=dict(size=12, color="#64748B"),
+                   tickfont=dict(size=11, color="#374151"),
                    gridcolor=BORDER, zeroline=True, zerolinecolor=NAVY, zerolinewidth=1.5),
-        yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+        yaxis=dict(tickfont=dict(size=12, color=NAVY), showgrid=False),
         showlegend=False,
     )
     lime_text = generate_lime_text(pairs, fcast, hist, sel_pid)
     st.markdown(f"""
-    <div class='tile' style='min-height:300px'>
-      <div style='font-size:20px;font-weight:800;color:{NAVY};
-                  border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:12px'>
+      <div style='font-size:22px;font-weight:800;color:#FFFFFF;
+                  border-bottom:2px solid rgba(255,255,255,0.85);
+                  padding-bottom:10px;margin-bottom:14px'>
         Local Explainability (LIME)
       </div>
-      <p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px'>{lime_text}</p>
-      <div style='font-size:12px;font-weight:700;color:#94A3B8;
-                  letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px'>
+      <p style='font-size:15px;color:rgba(255,255,255,0.92);
+                line-height:1.75;margin-bottom:18px'>{lime_text}</p>
+      <div style='font-size:13px;font-weight:800;color:#CBD5E1;
+                  letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px'>
         Top Local Feature Contributions (LIME)
-      </div>
-    </div>""", unsafe_allow_html=True)
+      </div>""", unsafe_allow_html=True)
     st.plotly_chart(fig_lime, use_container_width=True)
+
+def _render_vs_last_year(vly, drivers=None):
+    """Render the 'forecast vs same weeks last year' text + optional change-driver bar."""
+
+    title_html = (
+        "<div style='font-size:18px;font-weight:800;color:#fff;"
+        "border-bottom:1px solid rgba(255,255,255,0.85);"
+        "padding-bottom:10px;margin-bottom:12px'>"
+        "Prediction vs last year</div>"
+    )
+
+    if vly.get("no_data"):
+        st.markdown(
+            "<hr class='div'>"
+            + title_html +
+            "<p style='font-size:15px;color:rgba(255,255,255,0.92);"
+            "line-height:1.75;margin-bottom:18px'>"
+            "No recorded sales for the same period last year, so a year-over-year "
+            "comparison isn’t available for this product.</p>",
+            unsafe_allow_html=True
+        )
+        return
+
+    pct   = vly["change_pct"]
+    color = GREEN if pct >= 0 else RED
+    word  = "higher" if pct >= 0 else "lower"
+
+    drv_label = (
+        "<div style='font-size:13px;font-weight:800;color:#CBD5E1;"
+        "letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px'>"
+        "What’s driving the change</div>"
+    ) if drivers else ""
+
+    st.markdown(
+        "<hr class='div'>"
+        + title_html +
+        f"<p style='font-size:15px;color:rgba(255,255,255,0.92);"
+        f"line-height:1.75;margin-bottom:18px'>"
+        f"The next 4 periods are forecast at <b>{vly['fc_total']:,.0f}</b> units versus "
+        f"<b>{vly['ly_total']:,.0f}</b> in the same weeks last year, i.e. "
+        f"<b style='color:{color}'>{abs(pct):.1f}% {word}</b>.</p>"
+        f"{drv_label}",
+        unsafe_allow_html=True
+    )
+
+    if drivers:
+        top    = sorted(drivers, key=lambda kv: abs(kv[1]))[-6:]
+        labels = [FEAT_LABELS.get(f, f) for f, _ in top]
+        vals   = [v for _, v in top]
+        colors = [GREEN if v >= 0 else RED for v in vals]
+
+        fig = go.Figure(go.Bar(
+            x=vals, y=labels, orientation="h", marker_color=colors,
+            text=[f"+{v:.1f}" if v >= 0 else f"{v:.1f}" for v in vals],
+            textposition="outside", textfont=dict(size=12, color=NAVY),
+            cliponaxis=False,
+        ))
+
+        fig.update_layout(
+            paper_bgcolor=CARD, plot_bgcolor=CARD, height=260,
+            margin=dict(l=10, r=60, t=6, b=24),
+            xaxis=dict(
+                title="Contribution to the change vs last year",
+                title_font=dict(size=12, color="#64748B"),
+                tickfont=dict(size=11, color="#374151"),
+                gridcolor=BORDER,
+                zeroline=True,
+                zerolinecolor=NAVY,
+                zerolinewidth=1.5
+            ),
+            yaxis=dict(tickfont=dict(size=12, color=NAVY), showgrid=False),
+            showlegend=False,
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
 
 # UPLOAD ROW
 # Fixed 5-column layout so the row never changes shape between reruns. A changing
@@ -510,22 +677,32 @@ if st.session_state.get("results"):
         chart_col, xai_col = st.columns([6, 4], gap="medium")
 
         with chart_col:
-            fig2, ax2 = white_ax((9, 3.8))
-            tail = hist.tail(52)
-            ax2.plot(tail["date"], tail["sales"], color=NAVY, lw=1.8, label="Historical", zorder=3)
-            ax2.plot(fcast["date"], fcast["forecast"], color=BLUE, lw=2.2,
-                     marker="o", markersize=5, label="Forecast", zorder=4)
-            ax2.fill_between(fcast["date"],
-                             fcast["forecast"]*0.85, fcast["forecast"]*1.15,
-                             color=BLUE, alpha=0.12, label="15% band")
-            ax2.axvline(hist["date"].iloc[-1], color=BORDER, lw=1.2, linestyle="--")
-            ax2.yaxis.grid(True, color=BORDER, zorder=0); ax2.set_axisbelow(True)
-            ax2.set_ylabel("Units", color="#64748B", fontsize=9)
-            ax2.legend(facecolor=CARD, edgecolor=BORDER, fontsize=8)
-            ax2.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
-            fig2.autofmt_xdate()
-            plt.tight_layout(pad=0.4)
-            st.pyplot(fig2, use_container_width=True)
+            with st.container(border=True):
+                st.markdown(
+                    "<div style='font-size:18px;font-weight:800;color:#fff;"
+                    "border-bottom:1px solid rgba(255,255,255,0.85);"
+                    "padding-bottom:10px;margin-bottom:12px'>"
+                    "Sales history &amp; 4-period forecast</div>",
+                    unsafe_allow_html=True)
+                fig2, ax2 = white_ax((9, 4.7))
+                tail = hist.tail(52)
+                ax2.plot(tail["date"], tail["sales"], color=NAVY, lw=1.8, label="Actual sales", zorder=3)
+                if "fitted" in tail.columns:
+                    ax2.plot(tail["date"], tail["fitted"], color=GREEN, lw=1.5,
+                             linestyle="--", label="Model fit (in-sample)", zorder=3.5)
+                ax2.plot(fcast["date"], fcast["forecast"], color=BLUE, lw=2.2,
+                         marker="o", markersize=5, label="Forecast", zorder=4)
+                ax2.fill_between(fcast["date"],
+                                 fcast["forecast"]*0.85, fcast["forecast"]*1.15,
+                                 color=BLUE, alpha=0.12, label="15% band")
+                ax2.axvline(hist["date"].iloc[-1], color=BORDER, lw=1.2, linestyle="--")
+                ax2.yaxis.grid(True, color=BORDER, zorder=0); ax2.set_axisbelow(True)
+                ax2.set_ylabel("Units", color="#64748B", fontsize=9)
+                ax2.legend(facecolor=CARD, edgecolor=BORDER, fontsize=8)
+                ax2.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+                fig2.autofmt_xdate()
+                plt.tight_layout(pad=0.4)
+                st.pyplot(fig2, use_container_width=True)
 
         with xai_col:
             xai_data = pr.get("xai")
@@ -543,32 +720,22 @@ if st.session_state.get("results"):
                     x=xai_signed, y=feat_names_xai, orientation="h",
                     marker_color=bar_colors,
                     text=[f"+{v:.2f}" if v >= 0 else f"{v:.2f}" for v in xai_signed],
-                    textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
+                    textposition="outside", textfont=dict(size=12, color=NAVY), cliponaxis=False,
                 ))
                 fig_xai.update_layout(
                     paper_bgcolor=CARD, plot_bgcolor=CARD, height=320,
                     margin=dict(l=10, r=60, t=10, b=30),
                     xaxis=dict(title="SHAP value (impact on prediction)",
-                               title_font=dict(size=11, color="#64748B"),
-                               tickfont=dict(size=10, color="#374151"),
+                               title_font=dict(size=12, color="#64748B"),
+                               tickfont=dict(size=11, color="#374151"),
                                gridcolor=BORDER, zeroline=True,
                                zerolinecolor=NAVY, zerolinewidth=1.5),
-                    yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+                    yaxis=dict(tickfont=dict(size=12, color=NAVY), showgrid=False),
                     showlegend=False,
                 )
                 xai_text = generate_shap_text(pairs, fcast, hist, sel_pid)
-                st.markdown(f"""
-                <div class='tile' style='min-height:300px'>
-                  <div style='font-size:20px;font-weight:800;color:{NAVY};
-                              border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:12px'>
-                    Explainability (SHAP)
-                  </div>
-                  <p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px'>{xai_text}</p>
-                  <div style='font-size:12px;font-weight:700;color:#94A3B8;
-                              letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px'>
-                    Top Feature Contributions (SHAP)
-                  </div>
-                </div>""", unsafe_allow_html=True)
+                st.markdown(_xai_header("Explainability (SHAP)", xai_text,
+                                        "Top Feature Contributions (SHAP)"), unsafe_allow_html=True)
                 st.plotly_chart(fig_xai, use_container_width=True)
 
             # SHAP mode for EBM: show its native (glass-box) importances
@@ -580,31 +747,21 @@ if st.session_state.get("results"):
                 fig_xai = go.Figure(go.Bar(
                     x=xai_scores, y=feat_names_xai, orientation="h", marker_color=BLUE,
                     text=[f"{v:.3f}" for v in xai_scores],
-                    textposition="outside", textfont=dict(size=11, color=NAVY), cliponaxis=False,
+                    textposition="outside", textfont=dict(size=12, color=NAVY), cliponaxis=False,
                 ))
                 fig_xai.update_layout(
                     paper_bgcolor=CARD, plot_bgcolor=CARD, height=320,
                     margin=dict(l=10, r=50, t=10, b=30),
                     xaxis=dict(title="EBM feature importance",
-                               title_font=dict(size=11, color="#64748B"),
-                               tickfont=dict(size=10, color="#374151"),
+                               title_font=dict(size=12, color="#64748B"),
+                               tickfont=dict(size=11, color="#374151"),
                                gridcolor=BORDER, zeroline=False),
-                    yaxis=dict(tickfont=dict(size=11, color=NAVY), showgrid=False),
+                    yaxis=dict(tickfont=dict(size=12, color=NAVY), showgrid=False),
                     showlegend=False,
                 )
                 xai_text = generate_shap_text(pairs, fcast, hist, sel_pid)
-                st.markdown(f"""
-                <div class='tile' style='min-height:300px'>
-                  <div style='font-size:20px;font-weight:800;color:{NAVY};
-                              border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:12px'>
-                    Explainability (EBM)
-                  </div>
-                  <p style='font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px'>{xai_text}</p>
-                  <div style='font-size:12px;font-weight:700;color:#94A3B8;
-                              letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px'>
-                    Top Feature Importances (EBM)
-                  </div>
-                </div>""", unsafe_allow_html=True)
+                st.markdown(_xai_header("Explainability (EBM)", xai_text,
+                                        "Top Feature Importances (EBM)"), unsafe_allow_html=True)
                 st.plotly_chart(fig_xai, use_container_width=True)
 
             # LIME: local explanation for the latest prediction (XGBoost / LightGBM)
@@ -622,28 +779,43 @@ if st.session_state.get("results"):
                         st.warning(f"LIME could not be computed: {e}")
 
             elif xai_mode == "LIME" and _mt == "EBM":
-                st.markdown(f"""
-                <div class='tile' style='min-height:300px'>
-                  <div style='font-size:20px;font-weight:800;color:{NAVY};
-                              border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:10px'>
-                    Explainability
-                  </div>
-                  <p style='font-size:12px;color:#94A3B8;margin-top:8px'>
-                    EBM is already a glass-box model, use <b>SHAP</b> mode to see its built-in explanations.
-                  </p>
-                </div>""", unsafe_allow_html=True)
+                with st.container(border=True):
+                    st.markdown(f"""
+                      <div style='font-size:20px;font-weight:800;color:{NAVY};
+                                  border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:8px'>
+                        Explainability</div>
+                      <p style='font-size:13px;color:#64748B;margin-top:4px;line-height:1.6'>
+                        EBM is already a glass-box model, use <b>SHAP</b> mode to see its built-in explanations.
+                      </p>""", unsafe_allow_html=True)
 
             else:
-                st.markdown(f"""
-                <div class='tile' style='min-height:300px'>
-                  <div style='font-size:20px;font-weight:800;color:{NAVY};
-                              border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:10px'>
-                    Explainability
-                  </div>
-                  <p style='font-size:12px;color:#94A3B8;margin-top:8px'>
-                    Select <b>XGBoost</b>, <b>EBM</b>, or <b>LightGBM</b> and re-run to see explanations.
-                  </p>
-                </div>""", unsafe_allow_html=True)
+                with st.container(border=True):
+                    st.markdown(f"""
+                      <div style='font-size:20px;font-weight:800;color:{NAVY};
+                                  border-bottom:2px solid {BORDER};padding-bottom:10px;margin-bottom:8px'>
+                        Explainability</div>
+                      <p style='font-size:13px;color:#64748B;margin-top:4px;line-height:1.6'>
+                        Select <b>XGBoost</b>, <b>EBM</b>, or <b>LightGBM</b> and re-run to see explanations.
+                      </p>""", unsafe_allow_html=True)
+
+            vly = pr.get("vs_last_year")
+            if vly:
+                drivers = vly.get("drivers")
+                # XGBoost/LightGBM change-drivers (SHAP) are computed on demand for
+                # the selected product only, to keep run_all fast.
+                if (not vly.get("no_data") and drivers is None
+                        and vly.get("fc_rows") is not None and _mt in ("XGBoost", "LightGBM")):
+                    with st.spinner("Computing change drivers..."):
+                        try:
+                            mdl_sel, fcols_sel = train_model(hist, _mt)
+                            cf = _contribs(mdl_sel, fcols_sel, _mt, vly["fc_rows"])
+                            cl = _contribs(mdl_sel, fcols_sel, _mt, vly["ly_rows"])
+                            delta = {f: cf.get(f, 0.0) - cl.get(f, 0.0)
+                                     for f in set(cf) | set(cl)}
+                            drivers = sorted(delta.items(), key=lambda kv: -abs(kv[1]))[:8]
+                        except Exception:
+                            drivers = None
+                _render_vs_last_year(vly, drivers)
 
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
