@@ -309,19 +309,27 @@ def vs_last_year(mdl, fcols, model_type, feat, fcast):
         if k in key2idx:
             keep_fc.append(idx); ly_ix.append(key2idx[k])
     if not ly_ix:
-        return None
+        # No matching weeks one year back (e.g. a product whose history doesn't
+        # cover the same period last year). Surface this honestly in the UI.
+        return {"no_data": True}
     fc_rows, ly_rows = fc.loc[keep_fc], h.loc[ly_ix]
     fc_total = float(fc_rows["forecast"].sum())
     ly_total = float(ly_rows["sales"].sum())
     change_pct = (fc_total - ly_total) / ly_total * 100 if ly_total else 0.0
-    drivers = None
-    if model_type in ("XGBoost", "LightGBM", "EBM"):
-        cf = _contribs(mdl, fcols, model_type, fc_rows)
-        cl = _contribs(mdl, fcols, model_type, ly_rows)
+    out = {"no_data": False, "fc_total": fc_total, "ly_total": ly_total,
+           "change_pct": change_pct, "n_matched": len(ly_ix), "drivers": None}
+    if model_type == "EBM":
+        # EBM contributions are cheap (explain_local) and reuse the trained model,
+        # so compute the change drivers here.
+        cf = _contribs(mdl, fcols, "EBM", fc_rows)
+        cl = _contribs(mdl, fcols, "EBM", ly_rows)
         delta = {f: cf.get(f, 0.0) - cl.get(f, 0.0) for f in set(cf) | set(cl)}
-        drivers = sorted(delta.items(), key=lambda kv: -abs(kv[1]))[:8]
-    return {"fc_total": fc_total, "ly_total": ly_total,
-            "change_pct": change_pct, "n_matched": len(ly_ix), "drivers": drivers}
+        out["drivers"] = sorted(delta.items(), key=lambda kv: -abs(kv[1]))[:8]
+    elif model_type in ("XGBoost", "LightGBM"):
+        # SHAP is the slow part; keep the matched rows and compute the drivers on
+        # demand for the selected product only (done in the render code below).
+        out["fc_rows"], out["ly_rows"] = fc_rows, ly_rows
+    return out
 
 
 @st.cache_data(show_spinner=False)
@@ -433,12 +441,22 @@ def _render_lime_panel(pairs, fcast, hist, sel_pid):
                                 "Top Local Feature Contributions (LIME)"), unsafe_allow_html=True)
         st.plotly_chart(fig_lime, use_container_width=True)
 
-def _render_vs_last_year(vly):
-    """Render the 'forecast vs same weeks last year' tile + change-driver bar."""
+def _render_vs_last_year(vly, drivers=None):
+    """Render the 'forecast vs same weeks last year' card (text + change-driver bar)."""
+    if vly.get("no_data"):
+        with st.container(border=True):
+            st.markdown(
+                f"<div style='font-size:18px;font-weight:800;color:{NAVY};"
+                f"border-bottom:2px solid {BORDER};padding-bottom:8px;margin-bottom:10px'>"
+                f"Forecast vs last year</div>"
+                f"<p style='font-size:13px;color:#94A3B8;line-height:1.6'>"
+                f"No recorded sales for the same period last year, so a year-over-year "
+                f"comparison isn't available for this product.</p>",
+                unsafe_allow_html=True)
+        return
     pct   = vly["change_pct"]
     color = GREEN if pct >= 0 else RED
     word  = "higher" if pct >= 0 else "lower"
-    drivers = vly.get("drivers")
     drv_label = ("<div style='font-size:12px;font-weight:700;color:#94A3B8;"
                  "letter-spacing:.1em;text-transform:uppercase'>"
                  "What's driving the change</div>") if drivers else ""
@@ -729,7 +747,22 @@ if st.session_state.get("results"):
 
             vly = pr.get("vs_last_year")
             if vly:
-                _render_vs_last_year(vly)
+                drivers = vly.get("drivers")
+                # XGBoost/LightGBM change-drivers (SHAP) are computed on demand for
+                # the selected product only, to keep run_all fast.
+                if (not vly.get("no_data") and drivers is None
+                        and vly.get("fc_rows") is not None and _mt in ("XGBoost", "LightGBM")):
+                    with st.spinner("Computing change drivers..."):
+                        try:
+                            mdl_sel, fcols_sel = train_model(hist, _mt)
+                            cf = _contribs(mdl_sel, fcols_sel, _mt, vly["fc_rows"])
+                            cl = _contribs(mdl_sel, fcols_sel, _mt, vly["ly_rows"])
+                            delta = {f: cf.get(f, 0.0) - cl.get(f, 0.0)
+                                     for f in set(cf) | set(cl)}
+                            drivers = sorted(delta.items(), key=lambda kv: -abs(kv[1]))[:8]
+                        except Exception:
+                            drivers = None
+                _render_vs_last_year(vly, drivers)
 
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
