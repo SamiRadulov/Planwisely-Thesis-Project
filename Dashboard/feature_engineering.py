@@ -4,7 +4,7 @@ Feature Engineering
 Builds a per-product weekly feature set from preprocessed sales data.
 Mirrors feature_engineering.ipynb exactly.
 
-External CSVs are loaded from the same directory as this file.
+External CSVs are loaded from the sibling 'Initial Data' folder (with fallbacks).
 If a file is missing the corresponding feature group is silently skipped.
 
 Exported symbols used by app.py and shap_utils.py
@@ -21,32 +21,41 @@ import numpy as np
 import pandas as pd
 
 _HERE = pathlib.Path(__file__).parent
+_ROOT = _HERE.parent
+
+def _data_path(name):
+    """Locate an external data file. After the repo reorganisation these live in
+    the sibling 'Initial Data' folder; the fallbacks keep older layouts working."""
+    for _p in (_ROOT / "Initial Data" / name, _HERE / name, _ROOT / name):
+        if _p.exists():
+            return _p
+    return _ROOT / "Initial Data" / name
 
 # ── Load external data files ──────────────────────────────────────────────────
 
 try:
-    _WEATHER_RAW = pd.read_csv(_HERE / "weather_weekly.csv")
+    _WEATHER_RAW = pd.read_csv(_data_path("weather_weekly.csv"))
     HAS_WEATHER  = True
 except Exception:
     _WEATHER_RAW = None
     HAS_WEATHER  = False
 
 try:
-    _HOLIDAY_RAW = pd.read_csv(_HERE / "holiday_weekly.csv")
+    _HOLIDAY_RAW = pd.read_csv(_data_path("holiday_weekly.csv"))
     HAS_HOLIDAY  = True
 except Exception:
     _HOLIDAY_RAW = None
     HAS_HOLIDAY  = False
 
 try:
-    _COVID_RAW = pd.read_csv(_HERE / "covid_weekly.csv")
+    _COVID_RAW = pd.read_csv(_data_path("covid_weekly.csv"))
     HAS_COVID  = True
 except Exception:
     _COVID_RAW = None
     HAS_COVID  = False
 
 try:
-    _SCHOOL_RAW = pd.read_csv(_HERE / "school_holidays_weekly.csv")
+    _SCHOOL_RAW = pd.read_csv(_data_path("school_holidays_weekly.csv"))
     HAS_SCHOOL  = True
 except Exception:
     _SCHOOL_RAW = None
