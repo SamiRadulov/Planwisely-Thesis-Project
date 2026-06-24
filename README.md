@@ -234,9 +234,6 @@ Business Understanding, Data Understanding, Modelling and Design, and others.)
 - **Recursive forecasting** feeds predictions back as inputs, so error compounds
   over the horizon. The dashboard forecasts four weeks and clips outputs to keep
   them realistic.
-- **In-sample R-squared.** The per-product R-squared in the dashboard reflects
-  fit, not out-of-sample accuracy. Rigorous accuracy was evaluated separately on a
-  chronological holdout.
 - **No zero-filling.** Weeks with no sales are not zero-filled, matching the
   weekly series used during development.
 - The first run per model can be slower while features and explanations are
