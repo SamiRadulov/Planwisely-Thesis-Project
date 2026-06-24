@@ -25,13 +25,13 @@ import matplotlib.pyplot as plt
 from lime.lime_tabular import LimeTabularExplainer
 from scipy.stats import spearmanr
 
-os.makedirs("lime_output", exist_ok=True)
-os.makedirs("lime_analysis", exist_ok=True)
+os.makedirs("../lime_output", exist_ok=True)
+os.makedirs(".", exist_ok=True)
 
 rng = np.random.RandomState(42)
 
 # ── 1. Load & setup (mirrors SHAP notebook) ─────────────────────────────────
-df = pd.read_csv("features_final.csv")
+df = pd.read_csv("../Feature_engineering/features_final.csv")
 df["week_start"] = pd.to_datetime(df["week_start"])
 df = df.sort_values(["week_start", "product_id"]).reset_index(drop=True)
 
@@ -107,7 +107,7 @@ plt.barh(top20.index, top20.values, color="#2563EB")
 plt.xlabel("Mean |LIME weight| (sampled 2021 instances)")
 plt.title("Global Feature Importance (mean |LIME|) — XGBoost (2021 holdout)")
 plt.tight_layout()
-plt.savefig("lime_output/global_bar.png", dpi=150, bbox_inches="tight")
+plt.savefig("../lime_output/global_bar.png", dpi=150, bbox_inches="tight")
 plt.close()
 print("Saved: lime_output/global_bar.png")
 
@@ -136,7 +136,7 @@ for label, pid in sample_products.items():
     plt.title(f"Local LIME — product {pid} ({label}), last week 2021\n"
               f"local surrogate $R^2$ = {score:.3f}")
     plt.tight_layout()
-    fname = f"lime_output/local_bar_{label}_product{pid}.png"
+    fname = f"../lime_output/local_bar_{label}_product{pid}.png"
     plt.savefig(fname, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved: {fname}")
@@ -152,7 +152,7 @@ plt.ylabel("Number of instances")
 plt.title("LIME Faithfulness — Local Surrogate Fit Across 2021 Instances")
 plt.legend()
 plt.tight_layout()
-plt.savefig("lime_analysis/faithfulness_hist.png", dpi=150, bbox_inches="tight")
+plt.savefig("faithfulness_hist.png", dpi=150, bbox_inches="tight")
 plt.close()
 print(f"Saved: lime_analysis/faithfulness_hist.png  (mean R2={scores.mean():.3f})")
 
@@ -189,7 +189,7 @@ plt.xlabel("LIME weight (mean ± std over 30 reruns)")
 plt.title(f"LIME Stability Across {N_REPEAT} Reruns — product {stab_pid}\n"
           f"mean pairwise rank correlation = {mean_pair_corr:.3f}")
 plt.tight_layout()
-plt.savefig("lime_analysis/stability_reruns.png", dpi=150, bbox_inches="tight")
+plt.savefig("stability_reruns.png", dpi=150, bbox_inches="tight")
 plt.close()
 print(f"Saved: lime_analysis/stability_reruns.png  (mean rank corr={mean_pair_corr:.3f})")
 
@@ -237,7 +237,7 @@ for i in range(len(label_names)):
                 ha="center", va="center", fontsize=8, color="black")
 ax.set_title("LIME Feature Rank Stability — Top 20 Features across Folds")
 plt.tight_layout()
-plt.savefig("lime_analysis/stability_rank_heatmap.png", dpi=150, bbox_inches="tight")
+plt.savefig("stability_rank_heatmap.png", dpi=150, bbox_inches="tight")
 plt.close()
 print("Saved: lime_analysis/stability_rank_heatmap.png")
 
@@ -248,14 +248,14 @@ stability_df = pd.DataFrame({
     "min_rank":  ranks_df.min(),
     "max_rank":  ranks_df.max(),
 }).sort_values("mean_rank").round(2)
-stability_df.to_csv("lime_analysis/stability_summary.csv")
+stability_df.to_csv("stability_summary.csv")
 print("\nFeature rank stability (lower std = more stable):")
 print(stability_df.head(15).to_string())
 
 # ── 8. Export ───────────────────────────────────────────────────────────────
-global_mean.to_csv("lime_output/global_importance.csv", header=["mean_abs_weight"])
-pd.Series(scores).describe().to_csv("lime_analysis/faithfulness_summary.csv")
-repeat_df.to_csv("lime_analysis/rerun_weights.csv", index=False)
+global_mean.to_csv("../lime_output/global_importance.csv", header=["mean_abs_weight"])
+pd.Series(scores).describe().to_csv("faithfulness_summary.csv")
+repeat_df.to_csv("rerun_weights.csv", index=False)
 
 print("\nDone. Key results:")
 print(f"  Global top-5 features : {list(global_mean.head(5).index)}")
